@@ -15,7 +15,7 @@ int
 main(int argc, char* argv[])
 {
 	if(argc != 3) {
-		std::cerr << "Usage: " + std::string(argv[0]) + " <PORT-NUMBER> <FILE-NAME>" << std::endl;
+		std::cerr << "Usage: " + std::string(argv[0]) + " PORT-NUMBER FILE-NAME" << std::endl;
 		exit(EXIT_FAILURE);
 	}
 
@@ -50,19 +50,24 @@ main(int argc, char* argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	std::cerr << "Here?" << std::endl;
-
+	int fd;
+	if ((fd = open(argv[2], O_RDONLY)) < 0) {
+		std::cerr << "Error: could not open desired file; exiting. " << std::endl;
+		exit(EXIT_FAILURE);
+	}
 	while (true) {
-		std::cerr << "Lol" << std::endl;
+
+		//The server should first start on the handshake stage.
+
 		std::string tmpstr(argv[1]);
 		std::cerr << "Waiting on port " + tmpstr << std::endl;
 		bytesReceived = recvfrom(sockfd, buff, BUFFSIZE, 0, (struct sockaddr *)&clientAddress, &addressLength);
-		std::cout << "Received " + bytesReceived << std::endl;
+		//std::cout << "Received " + bytesReceived << std::endl;
 		if (bytesReceived > 0) {
 			buff[bytesReceived] = 0;
 			printf("Received message: \"%s\"\n", buff);
 		}
-		sendto(sockfd, buff, strlen(buff), 0, (struct sockaddr *)&clientAddress, addressLength);
+		//sendto(sockfd, buff, strlen(buff), 0, (struct sockaddr *)&clientAddress, addressLength);
 	}
 
 	close(sockfd);
