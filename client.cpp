@@ -13,7 +13,7 @@
 #include <string.h>     /* strcat */
 #include <stdlib.h>     /* strtol */
 
-#define BUFLEN 				1032
+#define BUFSIZE 			1032
 #define MAXSEQNUM 			30720
 #define INITCONGWINSIZE 	1024
 #define INITSSTHRESH		30720
@@ -57,22 +57,30 @@ main(int argc, char* argv[])
 
 
 	struct sockaddr_in serverAddress;
-	int addressLength = sizeof(serverAddress);
+	socklen_t addressLength = sizeof(serverAddress);
 	memset((char *)&serverAddress, 0, sizeof(serverAddress));
 	serverAddress.sin_family = AF_INET;
 	serverAddress.sin_port = htons(std::atoi(argv[2]));
 	memcpy((void *)&serverAddress.sin_addr, hp->h_addr_list[0], hp->h_length);
 
-	char buf[BUFLEN];
+	char buf[BUFSIZE];
 	struct TCPHeader tcphdr;
-	setSeqNum((struct TCPHeader *)&tcphdr, 1234);
-	setAckNum((struct TCPHeader *)&tcphdr, 4321);
+	uint16_t initSeqNum = rand() % MAXSEQNUM;
+	setSeqNum((struct TCPHeader *)&tcphdr, initSeqNum);
+	setAckNum((struct TCPHeader *)&tcphdr, 0);
 	setWindow((struct TCPHeader *)&tcphdr, RECEIVEWINSIZE);
 	setNU_ASF((struct TCPHeader *)&tcphdr, false, true, false);
 
 	memcpy(buf, (struct TCPHeader *)&tcphdr, sizeof(tcphdr));
 
+	printf("Sending ACK packet %d\n", getAckNum((struct TCPHeader *)&tcphdr));
 	sendto(sockfd, buf, sizeof(tcphdr), 0, (struct sockaddr *)&serverAddress, addressLength);
+
+	struct TCPHeader tcphdr_synack;
+	int bytesReceived = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serverAddress, &addressLength);
+	memcpy((struct TCPHeader *)&tcphdr_synack, buf, bytesReceived);
+
+	printf("Receiving data packet %d\n", getSeqNum((struct TCPHeader *)&tcphdr_synack));
 
 	//The client should first start by making a handshake.
 

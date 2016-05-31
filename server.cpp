@@ -16,7 +16,11 @@
 #include <string.h>     /* strcat */
 #include <stdlib.h>     /* strtol */
 
-#define BUFSIZE 1032
+#define BUFSIZE				1032
+#define MAXSEQNUM 			30720
+#define INITCONGWINSIZE 	1024
+#define INITSSTHRESH		30720
+#define RECEIVEWINSIZE		30720
 
 const char *byte_to_binary(int x)
 {
@@ -76,27 +80,33 @@ main(int argc, char* argv[])
 		std::cerr << "Error: could not open desired file; exiting. " << std::endl;
 		exit(EXIT_FAILURE);
 	}
-	int fd2;
-	if ((fd2 = open("garbageoutput", O_WRONLY)) < 0) {
-		std::cerr << "OH NO" << std::endl;
-	}
 	while (true) {
 
 		//The server should first start on the handshake stage.
 
 		std::string tmpstr(argv[1]);
 		std::cerr << "Waiting on port " + tmpstr << std::endl;
-		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientAddress, &addressLength);
-		write(fd2, buf, bytesReceived);
-		struct TCPHeader tcphdr;
 
-		std::cout << sizeof(tcphdr) << std::endl;
+		struct TCPHeader tcphdr;
+		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientAddress, &addressLength);
+
+		if (bytesReceived < 0) {
+			std::cerr << "Uh oh, things screwed up. " << std::endl;
+		}
 
 		memcpy((struct TCPHeader *)&tcphdr, buf, bytesReceived);
+		printf("Receiving ACK packet %d\n", getAckNum((struct TCPHeader *)&tcphdr));
 
-		if (bytesReceived > 0) {
-			buf[bytesReceived] = 0;
-		}
+		struct TCPHeader tcphdr_response;
+		int initSeqNum = rand() % MAXSEQNUM;
+		setSeqNum((struct TCPHeader *)&tcphdr_response, initSeqNum);
+		setAckNum((struct TCPHeader *)&tcphdr_response, tcphdr.seqnum + 1);
+		setWindow((struct TCPHeader *)&tcphdr_response, RECEIVEWINSIZE);
+		setNU_ASF((struct TCPHeader *)&tcphdr_response, true, true, false);
+
+		sendto(sockfd, (struct TCPHeader *)&tcphdr_response, sizeof(tcphdr_response), 0, (struct sockaddr *)&clientAddress, addressLength);
+		printf("Sending data packet %d\n", getSeqNum((struct TCPHeader *)&tcphdr_response));
+
 		//sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&clientAddress, addressLength);
 	}
 
