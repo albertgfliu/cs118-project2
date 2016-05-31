@@ -7,8 +7,31 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <netdb.h>
+#include <stdint.h>
+#include "TCPHeader.h"
+#include <stdio.h>      /* printf */
+#include <string.h>     /* strcat */
+#include <stdlib.h>     /* strtol */
 
-#define BUFLEN 1040
+#define BUFLEN 				1032
+#define MAXSEQNUM 			30720
+#define INITCONGWINSIZE 	1024
+#define INITSSTHRESH		30720
+#define RECEIVEWINSIZE		30720
+
+const char *byte_to_binary(int x)
+{
+    static char b[9];
+    b[0] = '\0';
+
+    int z;
+    for (z = 128; z > 0; z >>= 1)
+    {
+        strcat(b, ((x & z) == z) ? "1" : "0");
+    }
+
+    return b;
+}
 
 int
 main(int argc, char* argv[])
@@ -40,13 +63,16 @@ main(int argc, char* argv[])
 	serverAddress.sin_port = htons(std::atoi(argv[2]));
 	memcpy((void *)&serverAddress.sin_addr, hp->h_addr_list[0], hp->h_length);
 
-
 	char buf[BUFLEN];
-	char *tempstr = "This is the first message.";
-	memcpy(buf, tempstr, strlen(tempstr));
-	if (sendto(sockfd, buf, strlen(tempstr), 0, (struct sockaddr *)&serverAddress, addressLength) < 0) {
-		std::cout << "Couldn't send. Sorry!" << std::endl;
-	}
+	struct TCPHeader tcphdr;
+	setSeqNum((struct TCPHeader *)&tcphdr, 1234);
+	setAckNum((struct TCPHeader *)&tcphdr, 4321);
+	setWindow((struct TCPHeader *)&tcphdr, RECEIVEWINSIZE);
+	setNU_ASF((struct TCPHeader *)&tcphdr, false, true, false);
+
+	memcpy(buf, (struct TCPHeader *)&tcphdr, sizeof(tcphdr));
+
+	sendto(sockfd, buf, sizeof(tcphdr), 0, (struct sockaddr *)&serverAddress, addressLength);
 
 	//The client should first start by making a handshake.
 

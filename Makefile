@@ -4,10 +4,10 @@ CXXFLAGS= -g -Wall -pthread -std=c++11 $(CXXOPTIMIZE)
 USERID=904167727
 
 # Add all .cpp files that need to be compiled for your server
-SERVER_FILES=server.cpp
+SERVER_FILES = server.cpp TCPHeader.cpp
 
 # Add all .cpp files that need to be compiled for your client
-CLIENT_FILES=client.cpp
+CLIENT_FILES = client.cpp TCPHeader.cpp
 
 all: server client
 

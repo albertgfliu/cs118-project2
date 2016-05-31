@@ -6,10 +6,31 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <stdint.h>
+#include "TCPHeader.h"
 
-//using namespace std;
 
-#define BUFFSIZE 1040
+#include <stdio.h>      /* printf */
+#include <string.h>     /* strcat */
+#include <stdlib.h>     /* strtol */
+
+#define BUFSIZE 1032
+
+const char *byte_to_binary(int x)
+{
+    static char b[9];
+    b[0] = '\0';
+
+    int z;
+    for (z = 128; z > 0; z >>= 1)
+    {
+        strcat(b, ((x & z) == z) ? "1" : "0");
+    }
+
+    return b;
+}
 
 int 
 main(int argc, char* argv[])
@@ -26,7 +47,7 @@ main(int argc, char* argv[])
 	int bytesReceived;
 	int sockfd;
 
-	char buff[BUFFSIZE];
+	char buf[BUFSIZE];
 
 	if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
 		std::cerr << "Error: could not create UDP socket; exiting. " << std::endl;
@@ -55,19 +76,28 @@ main(int argc, char* argv[])
 		std::cerr << "Error: could not open desired file; exiting. " << std::endl;
 		exit(EXIT_FAILURE);
 	}
+	int fd2;
+	if ((fd2 = open("garbageoutput", O_WRONLY)) < 0) {
+		std::cerr << "OH NO" << std::endl;
+	}
 	while (true) {
 
 		//The server should first start on the handshake stage.
 
 		std::string tmpstr(argv[1]);
 		std::cerr << "Waiting on port " + tmpstr << std::endl;
-		bytesReceived = recvfrom(sockfd, buff, BUFFSIZE, 0, (struct sockaddr *)&clientAddress, &addressLength);
-		//std::cout << "Received " + bytesReceived << std::endl;
+		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientAddress, &addressLength);
+		write(fd2, buf, bytesReceived);
+		struct TCPHeader tcphdr;
+
+		std::cout << sizeof(tcphdr) << std::endl;
+
+		memcpy((struct TCPHeader *)&tcphdr, buf, bytesReceived);
+
 		if (bytesReceived > 0) {
-			buff[bytesReceived] = 0;
-			printf("Received message: \"%s\"\n", buff);
+			buf[bytesReceived] = 0;
 		}
-		//sendto(sockfd, buff, strlen(buff), 0, (struct sockaddr *)&clientAddress, addressLength);
+		//sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&clientAddress, addressLength);
 	}
 
 	close(sockfd);
