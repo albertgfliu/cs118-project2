@@ -38,7 +38,7 @@ const char *byte_to_binary(int x)
 void
 printACK(unsigned int ackNum, bool retransmission)
 {
-	fprintf(stdout, "Sending ACK packet %d ", ackNum);
+	fprintf(stdout, "Sending ACK packet %u ", ackNum);
 	if (retransmission) {
 		fprintf(stdout, "Retransmission");
 	}
@@ -48,7 +48,7 @@ printACK(unsigned int ackNum, bool retransmission)
 void
 printSEQ(unsigned int seqNum)
 {
-	fprintf(stdout, "Receiving data packet %d \n", seqNum);
+	fprintf(stdout, "Receiving data packet %u \n", seqNum);
 }
 
 int
@@ -110,7 +110,7 @@ main(int argc, char* argv[])
 
 	sendto(sockfd, (void *)&tcphdr_ack, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
 
-	std::ofstream writestream("transferred_file", ios::in | ios::trunc | ios::binary);
+	std::ofstream writestream("transferred_file", std::ios::in | std::ios::trunc | std::ios::binary);
 
 	while(1) {
 		struct TCPHeader tcphdr_curr;
@@ -119,21 +119,25 @@ main(int argc, char* argv[])
 			std::cerr << "Problem with received packet" << std::endl;
 			break;
 		}
-		memcpy((struct TCPHeader *)&tcphdr_curr, buf, sizeof(struct TCPHeader));
+		else {
+			memcpy((struct TCPHeader *)&tcphdr_curr, buf, sizeof(struct TCPHeader));
 
-		/*If this is a data packet, i.e. ASF set to 000*/
-		if (bytesReceived > (int) sizeof(struct TCPHeader)) {
-			printSEQ(getSeqNum((struct TCPHeader *)&tcphdr_curr));
-			int payloadSize = bytesReceived - sizeof(struct TCPHeader);
-			writefile.write(buf + sizeof(struct TCPHeader), payloadSize);
+			/*If this is a data packet, i.e. ASF set to 000*/
+			if (bytesReceived > (int) sizeof(struct TCPHeader)) {
+				printSEQ(getSeqNum((struct TCPHeader *)&tcphdr_curr));
+				int payloadSize = bytesReceived - sizeof(struct TCPHeader);
+				printf("payload size = %d\n", payloadSize);
+				writestream.write(buf + sizeof(struct TCPHeader), payloadSize);
+				writestream.flush();
 
-			struct TCPHeader tcphdr_response;
-			currSeqNum++;
-			currAckNum = getSeqNum((struct TCPHeader *)&tcphdr_curr) + payloadSize;
-			setFields((struct TCPHeader *)&tcphdr_ack, currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, false);
+				struct TCPHeader tcphdr_response;
+				currSeqNum++;
+				currAckNum = getSeqNum((struct TCPHeader *)&tcphdr_curr) + payloadSize;
+				setFields((struct TCPHeader *)&tcphdr_response, currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, false);
 
-			sendto(sockfd, (void *)&tcphdr_response, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
-			printACK(getAckNum((struct TCPHeader *)&tcphdr_response), false);
+				sendto(sockfd, (void *)&tcphdr_response, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
+				printACK(getAckNum((struct TCPHeader *)&tcphdr_response), false);
+			}
 		}
 	}
 

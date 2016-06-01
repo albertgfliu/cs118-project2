@@ -23,17 +23,18 @@
 #define INITCONGWINSIZE 	1024
 #define INITSSTHRESH		30720
 #define RECEIVEWINSIZE		30720
+#define MSS					1024
 
 void
 printACK(unsigned int ackNum)
 {
-	fprintf(stdout, "Receiving ACK packet %d \n", ackNum);
+	fprintf(stdout, "Receiving ACK packet %u \n", ackNum);
 }
 
 void
 printDATA(unsigned int seqNum, unsigned int CWND, unsigned int SSThresh, bool retransmission)
 {
-	fprintf(stdout, "Sending ACK packet %d ", ackNum);
+	fprintf(stdout, "Sending data packet %u %u %u ", seqNum, CWND, SSThresh);
 	if (retransmission) {
 		fprintf(stdout, "Retransmission");
 	}
@@ -94,13 +95,8 @@ main(int argc, char* argv[])
 	}
 
 	/* Open the desired file for reading */
-	std::ifstream readstream(argv[2], ios::in | ios::binary);
+	std::ifstream readstream(argv[2], std::ios::in | std::ios::binary);
 
-	// int fd;
-	// if ((fd = open(argv[2], O_RDONLY)) < 0) {
-	// 	std::cerr << "Error: could not open desired file; exiting. " << std::endl;
-	// 	exit(EXIT_FAILURE);
-	// }
 
 	std::string tmpstr(argv[1]);
 	std::cerr << "Waiting on port " + tmpstr << std::endl;
@@ -108,19 +104,48 @@ main(int argc, char* argv[])
 	struct TCPHeader tcphdr_syn;
 	bytesReceived = recvfrom(sockfd, (void *)&tcphdr_syn, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, &addressLength);
 
+
 	if (bytesReceived < 0) {
 		std::cerr << "Uh oh, things screwed up. " << std::endl;
 	}
 
-	struct TCPHeader tcphdr_response;
-	int initSeqNum = rand() % MAXSEQNUM;
-	setFields((struct TCPHeader *)&tcphdr_response, initSeqNum, tcphdr.seqnum + 1, RECEIVEWINSIZE, true, true, false);
+	struct TCPHeader tcphdr_synack;
+	uint16_t initSeqNum = (uint16_t)(rand() % MAXSEQNUM);
+	setFields((struct TCPHeader *)&tcphdr_synack, initSeqNum, getSeqNum((struct TCPHeader *)&tcphdr_syn.seqnum) + 1, RECEIVEWINSIZE, true, true, false);
 
-	sendto(sockfd, (struct TCPHeader *)&tcphdr_response, sizeof(tcphdr_response), 0, (struct sockaddr *)&clientAddress, addressLength);
+	sendto(sockfd, (struct TCPHeader *)&tcphdr_synack, sizeof(tcphdr_synack), 0, (struct sockaddr *)&clientAddress, addressLength);
 
+	int currSeqNum = initSeqNum;
+	while (1) {
+		struct TCPHeader tcphdr_in;
+		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientAddress, &addressLength);
 
+		if (bytesReceived < (int) sizeof(struct TCPHeader)) {
+			std::cerr << "Problem with received packet" << std::endl;
+			break;
+		}
+		memcpy((struct TCPHeader *)&tcphdr_in, buf, sizeof(struct TCPHeader));
 
-		//sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&clientAddress, addressLength);
+		if (getACK((struct TCPHeader *)&tcphdr_in)) {
+			printACK(getAckNum((struct TCPHeader *)&tcphdr_in));
+			struct TCPHeader tcphdr_out;
+			setFields((struct TCPHeader *)&tcphdr_out, getAckNum((struct TCPHeader *)&tcphdr_in), getSeqNum((struct TCPHeader *)&tcphdr_in), RECEIVEWINSIZE, false, false, false);
+			memcpy(buf, (struct TCPHeader *)&tcphdr_out, sizeof(struct TCPHeader));
+			readstream.read(buf + sizeof(struct TCPHeader), MSS);
+
+			printDATA(getSeqNum((struct TCPHeader *)&tcphdr_out), 0, 0, false);
+			sendto(sockfd, buf, sizeof(struct TCPHeader) + readstream.gcount(), 0, (struct sockaddr *)&clientAddress, addressLength);
+		}
+
+		if (readstream.gcount() < MSS) {
+			break;
+		}
+		
+	}
+
+	//sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&clientAddress, addressLength);
+
+	readstream.close();
 
 	close(sockfd);
 }
