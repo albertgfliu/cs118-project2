@@ -36,6 +36,15 @@ setNU_ASF(struct TCPHeader *hdr, bool ACK, bool SYN, bool FIN)
 	}
 }
 
+void 
+setFields(struct TCPHeader *hdr, uint16_t newseqnum, uint16_t newacknum, uint16_t newwindow, bool ACK, bool SYN, bool FIN)
+{
+	setSeqNum(hdr, newseqnum);
+	setAckNum(hdr, newacknum);
+	setWindow(hdr, newwindow);
+	setNU_ASF(hdr, ACK, SYN, FIN);
+}
+
 uint16_t 
 getSeqNum(struct TCPHeader *hdr)
 {
