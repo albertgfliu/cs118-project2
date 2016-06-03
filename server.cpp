@@ -118,6 +118,7 @@ main(int argc, char* argv[])
 
 		if (curr_state == HANDSHAKE) {
 			if (getSYN((struct TCPHeader *)&tcphdr_in)) {
+				fprintf(stderr, "Received a SYN.\n");
 				struct TCPHeader tcphdr_synack;
 				setFields((struct TCPHeader *)&tcphdr_synack, initSeqNum, getSeqNum((struct TCPHeader *)&tcphdr_in.seqnum) + 1, RECEIVEWINSIZE, true, true, false);
 				sendto(sockfd, (struct TCPHeader *)&tcphdr_synack, sizeof(tcphdr_synack), 0, (struct sockaddr *)&clientAddress, addressLength);
@@ -137,11 +138,11 @@ main(int argc, char* argv[])
 
 				printDATA(getSeqNum((struct TCPHeader *)&tcphdr_out), 0, 0, false);
 				sendto(sockfd, buf, sizeof(struct TCPHeader) + readstream.gcount(), 0, (struct sockaddr *)&clientAddress, addressLength);
-			}
 
-			if (readstream.gcount() < MSS) {
-				curr_state = TEARDOWN;
-				continue;
+				if (readstream.gcount() < MSS) {
+					curr_state = TEARDOWN;
+					continue;
+				}
 			}
 		}
 
@@ -151,12 +152,13 @@ main(int argc, char* argv[])
 				printACK(getAckNum((struct TCPHeader *)&tcphdr_in));
 				fprintf(stderr, "This was the last ACK.\n");
 
+				fprintf(stderr, "Sending a FIN.\n");
 				struct TCPHeader tcphdr_fin;
 				setFields((struct TCPHeader *)&tcphdr_fin, 0, 0, RECEIVEWINSIZE, false, false, true);
 				sendto(sockfd, (struct TCPHeader *)&tcphdr_fin, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
 			}
 
-			if (getFIN((struct TCPHeader *)&tcphdr_in) && getACK((struct TCPHeader *)&tcphdr_in)) { //if it is FIN-ACK
+			else if (getFIN((struct TCPHeader *)&tcphdr_in) && getACK((struct TCPHeader *)&tcphdr_in)) { //if it is FIN-ACK
 				fprintf(stderr, "Got the FIN-ACK. Sending an ACK and exiting.\n");
 				struct TCPHeader tcphdr_ack;
 				setFields((struct TCPHeader *)&tcphdr_ack, 0, 0, RECEIVEWINSIZE, true, false, false);
