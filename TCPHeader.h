@@ -3,6 +3,12 @@
 
 #include <stdint.h>
 
+enum fsmstate {
+	HANDSHAKE,
+	TRANSFER,
+	TEARDOWN
+};
+
 struct TCPHeader {
 	uint16_t seqnum;
 	uint16_t acknum;

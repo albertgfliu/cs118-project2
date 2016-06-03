@@ -101,47 +101,71 @@ main(int argc, char* argv[])
 	std::string tmpstr(argv[1]);
 	std::cerr << "Waiting on port " + tmpstr << std::endl;
 
-	struct TCPHeader tcphdr_syn;
-	bytesReceived = recvfrom(sockfd, (void *)&tcphdr_syn, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, &addressLength);
-
-
-	if (bytesReceived < 0) {
-		std::cerr << "Uh oh, things screwed up. " << std::endl;
-	}
-
-	struct TCPHeader tcphdr_synack;
 	uint16_t initSeqNum = (uint16_t)(rand() % MAXSEQNUM);
-	setFields((struct TCPHeader *)&tcphdr_synack, initSeqNum, getSeqNum((struct TCPHeader *)&tcphdr_syn.seqnum) + 1, RECEIVEWINSIZE, true, true, false);
-
-	sendto(sockfd, (struct TCPHeader *)&tcphdr_synack, sizeof(tcphdr_synack), 0, (struct sockaddr *)&clientAddress, addressLength);
-
 	int currSeqNum = initSeqNum;
+	fsmstate curr_state = HANDSHAKE;
+
 	while (1) {
 		struct TCPHeader tcphdr_in;
 		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientAddress, &addressLength);
 
 		if (bytesReceived < (int) sizeof(struct TCPHeader)) {
-			std::cerr << "Problem with received packet" << std::endl;
-			break;
+			std::cerr << "Invalid packet due to header. Ignoring it." << std::endl;
+			continue;
 		}
+
 		memcpy((struct TCPHeader *)&tcphdr_in, buf, sizeof(struct TCPHeader));
 
-		if (getACK((struct TCPHeader *)&tcphdr_in)) {
-			printACK(getAckNum((struct TCPHeader *)&tcphdr_in));
-			struct TCPHeader tcphdr_out;
-			setFields((struct TCPHeader *)&tcphdr_out, getAckNum((struct TCPHeader *)&tcphdr_in), getSeqNum((struct TCPHeader *)&tcphdr_in), RECEIVEWINSIZE, false, false, false);
-			memcpy(buf, (struct TCPHeader *)&tcphdr_out, sizeof(struct TCPHeader));
-			readstream.read(buf + sizeof(struct TCPHeader), MSS);
-
-			printDATA(getSeqNum((struct TCPHeader *)&tcphdr_out), 0, 0, false);
-			sendto(sockfd, buf, sizeof(struct TCPHeader) + readstream.gcount(), 0, (struct sockaddr *)&clientAddress, addressLength);
+		if (curr_state == HANDSHAKE) {
+			if (getSYN((struct TCPHeader *)&tcphdr_in)) {
+				struct TCPHeader tcphdr_synack;
+				setFields((struct TCPHeader *)&tcphdr_synack, initSeqNum, getSeqNum((struct TCPHeader *)&tcphdr_in.seqnum) + 1, RECEIVEWINSIZE, true, true, false);
+				sendto(sockfd, (struct TCPHeader *)&tcphdr_synack, sizeof(tcphdr_synack), 0, (struct sockaddr *)&clientAddress, addressLength);
+				std::cerr << "Just sent out a SYN-ACK. " << std::endl;
+				curr_state = TRANSFER;
+				continue;
+			}
 		}
 
-		if (readstream.gcount() < MSS) {
-			break;
+		else if (curr_state == TRANSFER) {
+			if (getACK((struct TCPHeader *)&tcphdr_in)) {
+				printACK(getAckNum((struct TCPHeader *)&tcphdr_in));
+				struct TCPHeader tcphdr_out;
+				setFields((struct TCPHeader *)&tcphdr_out, getAckNum((struct TCPHeader *)&tcphdr_in), getSeqNum((struct TCPHeader *)&tcphdr_in), RECEIVEWINSIZE, false, false, false);
+				memcpy(buf, (struct TCPHeader *)&tcphdr_out, sizeof(struct TCPHeader));
+				readstream.read(buf + sizeof(struct TCPHeader), MSS);
+
+				printDATA(getSeqNum((struct TCPHeader *)&tcphdr_out), 0, 0, false);
+				sendto(sockfd, buf, sizeof(struct TCPHeader) + readstream.gcount(), 0, (struct sockaddr *)&clientAddress, addressLength);
+			}
+
+			if (readstream.gcount() < MSS) {
+				curr_state = TEARDOWN;
+				continue;
+			}
 		}
-		
+
+
+		else if (curr_state == TEARDOWN) {
+			if ((!getFIN((struct TCPHeader *)&tcphdr_in)) && getACK((struct TCPHeader *)&tcphdr_in)) { //if it is the last ACK
+				printACK(getAckNum((struct TCPHeader *)&tcphdr_in));
+				fprintf(stderr, "This was the last ACK.\n");
+
+				struct TCPHeader tcphdr_fin;
+				setFields((struct TCPHeader *)&tcphdr_fin, 0, 0, RECEIVEWINSIZE, false, false, true);
+				sendto(sockfd, (struct TCPHeader *)&tcphdr_fin, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
+			}
+
+			if (getFIN((struct TCPHeader *)&tcphdr_in) && getACK((struct TCPHeader *)&tcphdr_in)) { //if it is FIN-ACK
+				fprintf(stderr, "Got the FIN-ACK. Sending an ACK and exiting.\n");
+				struct TCPHeader tcphdr_ack;
+				setFields((struct TCPHeader *)&tcphdr_ack, 0, 0, RECEIVEWINSIZE, true, false, false);
+				sendto(sockfd, (struct TCPHeader *)&tcphdr_ack, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
+				break;
+			}
+		}
 	}
+
 
 	//sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&clientAddress, addressLength);
 

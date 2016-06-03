@@ -82,6 +82,9 @@ main(int argc, char* argv[])
 	serverAddress.sin_port = htons(std::atoi(argv[2]));
 	memcpy((void *)&serverAddress.sin_addr, hp->h_addr_list[0], hp->h_length);
 
+	/*Open file for writing*/
+	std::ofstream writestream("transferred_file", std::ios::in | std::ios::trunc | std::ios::binary);
+
 	/*Basic initializations*/
 	char buf[BUFSIZE]; //initiailize temporary buffer for storing data
 	uint16_t currSeqNum = rand() % MAXSEQNUM; //initialize random sequence number
@@ -110,8 +113,6 @@ main(int argc, char* argv[])
 
 	sendto(sockfd, (void *)&tcphdr_ack, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
 
-	std::ofstream writestream("transferred_file", std::ios::in | std::ios::trunc | std::ios::binary);
-
 	while(1) {
 		struct TCPHeader tcphdr_curr;
 		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serverAddress, &addressLength);
@@ -126,7 +127,7 @@ main(int argc, char* argv[])
 			if (bytesReceived > (int) sizeof(struct TCPHeader)) {
 				printSEQ(getSeqNum((struct TCPHeader *)&tcphdr_curr));
 				int payloadSize = bytesReceived - sizeof(struct TCPHeader);
-				printf("payload size = %d\n", payloadSize);
+				fprintf(stderr, "payload size = %d\n", payloadSize);
 				writestream.write(buf + sizeof(struct TCPHeader), payloadSize);
 				writestream.flush();
 
@@ -137,6 +138,22 @@ main(int argc, char* argv[])
 
 				sendto(sockfd, (void *)&tcphdr_response, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
 				printACK(getAckNum((struct TCPHeader *)&tcphdr_response), false);
+			}
+
+			if (bytesReceived == sizeof(struct TCPHeader)) {
+				fprintf(stderr, "received something with no payload\n");
+				if (getFIN((struct TCPHeader *)&tcphdr_curr)) {
+					fprintf(stderr, "got a fin!\n");
+
+					struct TCPHeader tcphdr_response;
+					setFields((struct TCPHeader *)&tcphdr_response, currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, true);
+
+					sendto(sockfd, (void *)&tcphdr_response, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
+				}
+				if (getACK((struct TCPHeader *)&tcphdr_curr)) {
+					fprintf(stderr, "got an ack from server! this means we are done\n");
+					break;
+				}
 			}
 		}
 	}
