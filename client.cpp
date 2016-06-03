@@ -38,17 +38,19 @@ const char *byte_to_binary(int x)
 void
 printACK(unsigned int ackNum, bool retransmission)
 {
-	fprintf(stdout, "Sending ACK packet %u ", ackNum);
+	//CHANGE TO STDOUT LATER
+	fprintf(stderr, "Sending ACK packet %u ", ackNum);
 	if (retransmission) {
 		fprintf(stdout, "Retransmission");
 	}
-	fprintf(stdout, "\n");
+	fprintf(stderr, "\n");
 }
 
 void
 printSEQ(unsigned int seqNum)
 {
-	fprintf(stdout, "Receiving data packet %u \n", seqNum);
+	//CHANGE TO STDOUT LATER
+	fprintf(stderr, "Receiving data packet %u \n", seqNum);
 }
 
 int
@@ -90,6 +92,8 @@ main(int argc, char* argv[])
 	uint16_t currSeqNum = rand() % MAXSEQNUM; //initialize random sequence number
 	uint16_t currAckNum = 0;
 
+	uint16_t expectedSeqNum = 0;
+
 	int bytesReceived;
 	fsmstate curr_state = HANDSHAKE;
 	while(1) {
@@ -107,9 +111,10 @@ main(int argc, char* argv[])
 		}
 
 		struct TCPHeader tcphdr_in;
-		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serverAddress, &addressLength);
+		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&serverAddress, &addressLength);
+
 		if (bytesReceived < (int) sizeof(struct TCPHeader)) {
-			std::cerr << "Problem with received packet or didn't receive anything yet" << std::endl;
+			std::cerr << "Problem with received packet or didn't receive anything yet." << std::endl;
 			continue;
 		}
 
@@ -122,6 +127,8 @@ main(int argc, char* argv[])
 				currSeqNum = getAckNum((struct TCPHeader *)&tcphdr_in);
 				currAckNum = getSeqNum((struct TCPHeader *)&tcphdr_in) + 1; //consume the SYN-ACK
 
+				expectedSeqNum = currAckNum;
+
 				/*Send ACK back to begin the process of transfer*/
 				struct TCPHeader tcphdr_ack;
 				setFields((struct TCPHeader *)&tcphdr_ack, currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, false);
@@ -131,14 +138,22 @@ main(int argc, char* argv[])
 			/*if data packet, i.e. ASF = 000, send ACK back*/
 			else if (!getACK((struct TCPHeader *)&tcphdr_in) && !getSYN((struct TCPHeader *)&tcphdr_in) && !getFIN((struct TCPHeader *)&tcphdr_in)) {
 				printSEQ(getSeqNum((struct TCPHeader *)&tcphdr_in));
-				int payloadSize = bytesReceived - sizeof(struct TCPHeader);
-				fprintf(stderr, "Payload Size = %d\n", payloadSize);
-				writestream.write(buf + sizeof(struct TCPHeader), payloadSize);
-				writestream.flush();
+
+				if (getSeqNum((struct TCPHeader *)&tcphdr_in) == expectedSeqNum) {
+					int payloadSize = bytesReceived - sizeof(struct TCPHeader);
+					fprintf(stderr, "Payload Size = %d\n", payloadSize);
+					writestream.write(buf + sizeof(struct TCPHeader), payloadSize);
+					writestream.flush();
+					currAckNum = getSeqNum((struct TCPHeader *)&tcphdr_in) + payloadSize;
+					if(currAckNum > MAXSEQNUM) {
+						currAckNum -= MAXSEQNUM;
+						fprintf(stderr, "set it to %u\n", currAckNum);
+					}
+					expectedSeqNum = currAckNum;
+				}
 
 				struct TCPHeader tcphdr_out;
-				//currSeqNum++; sequence number of packets from client NOT incremented unless consuming SYN-ACK or FIN
-				currAckNum = getSeqNum((struct TCPHeader *)&tcphdr_in) + payloadSize;
+
 				setFields((struct TCPHeader *)&tcphdr_out, currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, false);
 
 				sendto(sockfd, (void *)&tcphdr_out, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);

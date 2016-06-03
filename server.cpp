@@ -28,17 +28,19 @@
 void
 printACK(unsigned int ackNum)
 {
-	fprintf(stdout, "Receiving ACK packet %u \n", ackNum);
+	//CHANGE TO STDOUT LATER
+	fprintf(stderr, "Receiving ACK packet %u \n", ackNum);
 }
 
 void
 printDATA(unsigned int seqNum, unsigned int CWND, unsigned int SSThresh, bool retransmission)
 {
-	fprintf(stdout, "Sending data packet %u %u %u ", seqNum, CWND, SSThresh);
+	//CHANGE TO STDOUT LATER
+	fprintf(stderr, "Sending data packet %u %u %u ", seqNum, CWND, SSThresh);
 	if (retransmission) {
 		fprintf(stdout, "Retransmission");
 	}
-	fprintf(stdout, "\n");
+	fprintf(stderr, "\n");
 }
 
 const char *byte_to_binary(int x)
@@ -107,10 +109,10 @@ main(int argc, char* argv[])
 
 	while (1) {
 		struct TCPHeader tcphdr_in;
-		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientAddress, &addressLength);
+		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&clientAddress, &addressLength);
 
 		if (bytesReceived < (int) sizeof(struct TCPHeader)) {
-			std::cerr << "Invalid packet due to header. Ignoring it." << std::endl;
+			std::cerr << "Invalid packet or no message to get yet." << std::endl;
 			continue;
 		}
 
@@ -136,7 +138,7 @@ main(int argc, char* argv[])
 				memcpy(buf, (struct TCPHeader *)&tcphdr_out, sizeof(struct TCPHeader));
 				readstream.read(buf + sizeof(struct TCPHeader), MSS);
 
-				printDATA(getSeqNum((struct TCPHeader *)&tcphdr_out), 0, 0, false);
+				printDATA(getSeqNum((struct TCPHeader *)&tcphdr_out), INITCONGWINSIZE, INITSSTHRESH, false);
 				sendto(sockfd, buf, sizeof(struct TCPHeader) + readstream.gcount(), 0, (struct sockaddr *)&clientAddress, addressLength);
 
 				if (readstream.gcount() < MSS) {
