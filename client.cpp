@@ -2,24 +2,28 @@
 #include <string>
 #include <thread>
 #include <iostream>
+#include <fstream>
+
 #include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <unistd.h>
 #include <netdb.h>
+
+#include <unistd.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <math.h>
+
 #include "TCPHeader.h"
-#include <stdio.h>      /* printf */
-#include <string.h>     /* strcat */
-#include <stdlib.h>     /* strtol */
-#include <iostream>
-#include <fstream>
 
 #define BUFSIZE 			1032
 #define MAXSEQNUM 			30720
 #define INITCONGWINSIZE 	1024
 #define INITSSTHRESH		30720
 #define RECEIVEWINSIZE		30720
+#define MAXTRANSTIME_IN_NS	500000000
 
 const char *byte_to_binary(int x)
 {
@@ -51,6 +55,13 @@ printSEQ(unsigned int seqNum)
 {
 	//CHANGE TO STDOUT LATER
 	fprintf(stderr, "Receiving data packet %u \n", seqNum);
+}
+
+int
+timeDifference(struct timespec time1, struct timespec time2)
+{
+	double elapsedtime = ((double)time2.tv_sec*pow(10,9) + (double)time2.tv_nsec) - ((double)time1.tv_sec*pow(10,9) + (double)time1.tv_nsec);
+	return (int)elapsedtime;
 }
 
 int
@@ -94,49 +105,91 @@ main(int argc, char* argv[])
 
 	uint16_t expectedSeqNum = 0;
 
+	struct timespec start, now;
+
 	int bytesReceived;
 	fsmstate curr_state = HANDSHAKE;
+	int synTries = 0;
 	while(1) {
 
 		if(curr_state == HANDSHAKE) {
-			/*Set initial SYN TCPHeader*/
-			struct TCPHeader tcphdr_syn;
-			setFields((struct TCPHeader *)&tcphdr_syn, currSeqNum, currAckNum, RECEIVEWINSIZE, false, true, false);
+			if (synTries == 0) {
+				/*Set initial SYN TCPHeader*/
+				struct TCPHeader tcphdr_syn;
+				setFields((struct TCPHeader *)&tcphdr_syn, currSeqNum, currAckNum, RECEIVEWINSIZE, false, true, false);
 
-			/*Send initial SYN TCPHeader out*/
-			sendto(sockfd, (void *)&tcphdr_syn, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
+				/*Send initial SYN TCPHeader out*/
+				sendto(sockfd, (void *)&tcphdr_syn, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
 
-			curr_state = TRANSFER;
-			continue;
+				clock_gettime(CLOCK_MONOTONIC, &start);
+
+				synTries++;
+			}
+
+			else if (synTries > 3) {
+				goto QUITCLIENT;
+			}
+
+			else if (synTries > 0) {
+				struct TCPHeader tcphdr_in;
+				bytesReceived = recvfrom(sockfd, buf, BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&serverAddress, &addressLength);
+
+				if ((bytesReceived >= 0) && (bytesReceived < (int) sizeof(struct TCPHeader))) { //invalid size, if it's -1 then we're okay
+					std::cerr << "Problem with received packet." << std::endl;
+					continue;
+				}
+
+				memcpy((struct TCPHeader *)&tcphdr_in, buf, sizeof(struct TCPHeader));
+
+				/*if SYN-ACK packet was received*/
+				if(getACK((struct TCPHeader *)&tcphdr_in) && getSYN((struct TCPHeader *)&tcphdr_in) && !getFIN((struct TCPHeader *)&tcphdr_in)) {
+					synTries = -1;
+					fprintf(stderr, "Received a SYN-ACK.\n");
+					currSeqNum = getAckNum((struct TCPHeader *)&tcphdr_in);
+					currAckNum = getSeqNum((struct TCPHeader *)&tcphdr_in) + 1; //consume the SYN-ACK
+
+					expectedSeqNum = currAckNum;
+
+					/*Send ACK back to begin the process of transfer*/
+					struct TCPHeader tcphdr_ack;
+					setFields((struct TCPHeader *)&tcphdr_ack, currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, false);
+					sendto(sockfd, (void *)&tcphdr_ack, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
+					curr_state = TRANSFER;
+					continue;
+				}
+
+				clock_gettime(CLOCK_MONOTONIC, &now);
+				printf("%d\n", timeDifference(start,now));
+				if(timeDifference(start, now) >= MAXTRANSTIME_IN_NS) {
+					printf("I'm here guys...\n");
+					synTries++;				
+					struct TCPHeader tcphdr_syn;
+					setFields((struct TCPHeader *)&tcphdr_syn, currSeqNum, currAckNum, RECEIVEWINSIZE, false, true, false);
+
+					/*Send initial SYN TCPHeader out*/
+					sendto(sockfd, (void *)&tcphdr_syn, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
+
+					clock_gettime(CLOCK_MONOTONIC, &start); //restart the 500ms wait timer.
+				}
+			}
 		}
 
 		struct TCPHeader tcphdr_in;
 		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&serverAddress, &addressLength);
 
-		if (bytesReceived < (int) sizeof(struct TCPHeader)) {
-			std::cerr << "Problem with received packet or didn't receive anything yet." << std::endl;
+		if ((bytesReceived >= 0) && (bytesReceived < (int) sizeof(struct TCPHeader))) { //invalid size, if it's -1 then we're okay
+			std::cerr << "Problem with received packet." << std::endl;
 			continue;
 		}
 
 		memcpy((struct TCPHeader *)&tcphdr_in, buf, sizeof(struct TCPHeader));
 
 		if (curr_state == TRANSFER) {
-			/*if SYN-ACK packet was received*/
-			if(getACK((struct TCPHeader *)&tcphdr_in) && getSYN((struct TCPHeader *)&tcphdr_in) && !getFIN((struct TCPHeader *)&tcphdr_in)) {
-				fprintf(stderr, "Received a SYN-ACK.\n");
-				currSeqNum = getAckNum((struct TCPHeader *)&tcphdr_in);
-				currAckNum = getSeqNum((struct TCPHeader *)&tcphdr_in) + 1; //consume the SYN-ACK
 
-				expectedSeqNum = currAckNum;
 
-				/*Send ACK back to begin the process of transfer*/
-				struct TCPHeader tcphdr_ack;
-				setFields((struct TCPHeader *)&tcphdr_ack, currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, false);
-				sendto(sockfd, (void *)&tcphdr_ack, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
-			}
 			
 			/*if data packet, i.e. ASF = 000, send ACK back*/
-			else if (!getACK((struct TCPHeader *)&tcphdr_in) && !getSYN((struct TCPHeader *)&tcphdr_in) && !getFIN((struct TCPHeader *)&tcphdr_in)) {
+			if (!getACK((struct TCPHeader *)&tcphdr_in) && !getSYN((struct TCPHeader *)&tcphdr_in) && !getFIN((struct TCPHeader *)&tcphdr_in)) {
 				printSEQ(getSeqNum((struct TCPHeader *)&tcphdr_in));
 
 				if (getSeqNum((struct TCPHeader *)&tcphdr_in) == expectedSeqNum) {
@@ -145,7 +198,7 @@ main(int argc, char* argv[])
 					writestream.write(buf + sizeof(struct TCPHeader), payloadSize);
 					writestream.flush();
 					currAckNum = getSeqNum((struct TCPHeader *)&tcphdr_in) + payloadSize;
-					if(currAckNum > MAXSEQNUM) {
+					if(currAckNum >= MAXSEQNUM) {
 						currAckNum -= MAXSEQNUM;
 						fprintf(stderr, "set it to %u\n", currAckNum);
 					}
@@ -183,6 +236,8 @@ main(int argc, char* argv[])
 			}
 		}
 	}
+
+	QUITCLIENT:
 
 	writestream.close();
 	close(sockfd);
