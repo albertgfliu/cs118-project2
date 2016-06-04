@@ -2,21 +2,21 @@
 #include <string>
 #include <thread>
 #include <iostream>
-#include <fstream>
-
 #include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/stat.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <stdint.h>
-
-#include <stdio.h> 
-#include <stdlib.h>
-
-#include <time.h>
 #include "TCPHeader.h"
+#include <iostream>
+#include <fstream>
+
+
+#include <stdio.h>      /* printf */
+#include <string.h>     /* strcat */
+#include <stdlib.h>     /* strtol */
 
 #define BUFSIZE				1032
 #define MAXSEQNUM 			30720
@@ -103,7 +103,7 @@ main(int argc, char* argv[])
 	std::string tmpstr(argv[1]);
 	std::cerr << "Waiting on port " + tmpstr << std::endl;
 
-	uint16_t initSeqNum = rand() % MAXSEQNUM;
+	uint16_t initSeqNum = (uint16_t)(rand() % MAXSEQNUM);
 	int currSeqNum = initSeqNum;
 	fsmstate curr_state = HANDSHAKE;
 
@@ -112,7 +112,7 @@ main(int argc, char* argv[])
 		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&clientAddress, &addressLength);
 
 		if (bytesReceived < (int) sizeof(struct TCPHeader)) {
-			//std::cerr << "Invalid packet or no message to get yet." << std::endl;
+			std::cerr << "Invalid packet or no message to get yet." << std::endl;
 			continue;
 		}
 
