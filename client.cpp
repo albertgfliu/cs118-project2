@@ -73,7 +73,7 @@ main(int argc, char* argv[])
 	memcpy((void *)&serverAddress.sin_addr, hp->h_addr_list[0], hp->h_length);
 
 	/*Open file for writing*/
-	std::ofstream writestream("transferred_file", std::ios::in | std::ios::trunc | std::ios::binary);
+	std::ofstream writestream("received.data", std::ios::in | std::ios::trunc | std::ios::binary);
 
 	/*Basic initializations*/
 	char buf[BUFSIZE]; //initiailize temporary buffer for storing data
