@@ -130,33 +130,33 @@ Packet::getExpectedAckNumber(int maxSeqNum)
 void
 Packet::printSeqReceive()
 {
-	fprintf(stdout, "Receiving data packet %5u \n", getSeqNumber());
+	fprintf(stderr, "Receiving data packet %5u \n", getSeqNumber());
 }
 
 void
 Packet::printAckSend(bool retransmission)
 {
-	fprintf(stdout, "Sending ACK packet %5u ", getAckNumber());
+	fprintf(stderr, "Sending ACK packet %5u ", getAckNumber());
 	if (retransmission) {
 		fprintf(stdout, "Retransmission");
 	}
-	fprintf(stdout, "\n");
+	fprintf(stderr, "\n");
 }
 
 void
 Packet::printAckReceive()
 {
-	fprintf(stdout, "Receiving ACK packet %5u \n", getAckNumber());
+	fprintf(stderr, "Receiving ACK packet %5u \n", getAckNumber());
 }
 
 void
 Packet::printSeqSend(unsigned int CWND, unsigned int SSThresh, bool retransmission)
 {
-	fprintf(stdout, "Sending data packet %5u %5u %5u ", getSeqNumber(), CWND, SSThresh);
+	fprintf(stderr, "Sending data packet %5u %5u %5u ", getSeqNumber(), CWND, SSThresh);
 	if (retransmission) {
-		fprintf(stdout, "Retransmission");
+		fprintf(stderr, "Retransmission");
 	}
-	fprintf(stdout, "\n");
+	fprintf(stderr, "\n");
 }
 
 bool

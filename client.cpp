@@ -131,7 +131,7 @@ main(int argc, char* argv[])
 
 				if (received_packet.getSeqNumber() == expectedSeqNum) {
 					int payloadSize = bytesReceived - sizeof(struct TCPHeader);
-					fprintf(stderr, "Payload Size = %d\n", payloadSize);
+					//fprintf(stderr, "Payload Size = %d\n", payloadSize);
 
 					// for (int i = 0; i < payloadSize; i++) {
 					// 	fprintf(stderr, "%c",received_packet.data[i]);

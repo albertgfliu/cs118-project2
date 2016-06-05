@@ -109,10 +109,13 @@ main(int argc, char* argv[])
 		while (it != unackedPackets.end()) {
 			//if current packet is expired, send it out again
 			if (it->hasExpired(now, TIMEOUT)) {
+				fprintf(stderr, "Packet with sequence number %u expired\n", it->getSeqNumber());
 				it->copyIntoBuf(buf);
 				sendto(sockfd, buf, it->m_size, 0, (struct sockaddr *)&clientAddress, addressLength);
+				it->printSeqSend(currWindowSize, currSSThresh, true);
 
 				clock_gettime(CLOCK_MONOTONIC, &(it->m_time)); //start its timer over again
+
 			}
 			it++;
 		}
@@ -144,17 +147,54 @@ main(int argc, char* argv[])
 			if (received_packet.isACK()) {
 				received_packet.printAckReceive();
 
-				// std::list<Packet>::iterator it = unackedPackets.begin();
-				// while (it != unackedPackets.end()) {
-				// 	uint16_t expectedAckNumber = it->getExpectedAckNumber();
+				//Based upon received ACK number and current window size, remove packets inside unackedPackets
+				/*
+				* MAY NOT WORK
+				*/
+				uint16_t currAckNum = received_packet.getAckNumber();
+				if (currAckNum < currWindowSize) { //then wraparound of the window exists
+					std::list<Packet>::iterator it = unackedPackets.begin();
+					while (it != unackedPackets.end()) {
+						uint16_t currSeqNum = it->getSeqNumber();
+						if (currSeqNum < currAckNum) {
+							it = unackedPackets.erase(it);
+						}
+						else if (currSeqNum > (MAXSEQNUM - 1 - currWindowSize + currAckNum)) {
+							it = unackedPackets.erase(it);
+						}
+						else {
+							it++;
+						}
+					}
+				}
+				else { //no wraparound of window exists
+					std::list<Packet>::iterator it = unackedPackets.begin();
+					while (it != unackedPackets.end()) {
+						uint16_t currSeqNum = it->getSeqNumber();
+						if ((currSeqNum < currAckNum) && (currSeqNum >= (currAckNum - currWindowSize))) {
+							it = unackedPackets.erase(it);
+						}
+						else {
+							it++;
+						}
+					}
+				}
 
-				// 	if (received_packet.getAckNumber() > expectedAckNumber) { //CHECK THIS LOGIC?
-				// 		it.remove(); //???
-				// 	}
-				// 	else {
-				// 		it++;
-				// 	}
-				// }
+				//Count number of bytes in flight and don't send if still unacked packets
+				
+				uint16_t bytesInFlight = 0;
+				for (std::list<Packet>::iterator it = unackedPackets.begin(); it != unackedPackets.end(); it++) {
+					bytesInFlight += (it->m_size - sizeof(struct TCPHeader));
+				}
+				fprintf(stderr, "%u bytes in flight\n", bytesInFlight);
+				if (bytesInFlight < currWindowSize) {
+					//keep going
+				}
+				else {
+					continue;
+				}
+
+				/*END MAY NOT WORK */
 
 				Packet delivery_packet;
 				readstream.read(delivery_packet.data, MSS);
@@ -172,6 +212,11 @@ main(int argc, char* argv[])
 				delivery_packet.printSeqSend(currWindowSize, currSSThresh, false);
 
 				sendto(sockfd, buf, sizeof(struct TCPHeader) + readstream.gcount(), 0, (struct sockaddr *)&clientAddress, addressLength);
+
+				/* MAY NOT WORK */
+				clock_gettime(CLOCK_MONOTONIC, &delivery_packet.m_time);
+				unackedPackets.push_back(delivery_packet);
+				/* END MAY NOT WORK */
 
 				if (readstream.gcount() < MSS) {
 					curr_state = TEARDOWN;
