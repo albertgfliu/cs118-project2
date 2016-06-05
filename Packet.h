@@ -26,6 +26,8 @@ class Packet
 		uint16_t getAckNumber();
 		uint16_t getWindowSize();
 
+		uint16_t getExpectedAckNumber(int maxSeqNum);
+
 		/* Print Functions */
 		void printSeqReceive();
 		void printAckSend(bool retransmission);

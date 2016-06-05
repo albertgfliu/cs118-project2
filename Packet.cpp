@@ -16,7 +16,7 @@ Packet::Packet()
 Packet::Packet(char *buf, unsigned int length)
 {
 	memcpy((void *)&m_header, buf, sizeof(struct TCPHeader));
-	memcpy(data, buf, length - sizeof(struct TCPHeader));
+	memcpy(data, buf + sizeof(struct TCPHeader), length - sizeof(struct TCPHeader));
 	m_size = length;
 	clock_gettime(CLOCK_MONOTONIC, &m_time);
 }
@@ -112,16 +112,31 @@ Packet::getWindowSize()
 	return getWindow((struct TCPHeader *)&m_header);
 }
 
+uint16_t
+Packet::getExpectedAckNumber(int maxSeqNum)
+{
+	uint16_t seqNum = getSeqNum((struct TCPHeader *)&m_header);
+	uint16_t payloadSize = m_size - sizeof(struct TCPHeader);
+
+	uint16_t expectedAckNum = seqNum + payloadSize;
+
+	if (expectedAckNum > maxSeqNum) {
+		expectedAckNum -= maxSeqNum;
+	}
+
+	return expectedAckNum;
+}
+
 void
 Packet::printSeqReceive()
 {
-	fprintf(stdout, "Receiving data packet %u \n", getSeqNumber());
+	fprintf(stdout, "Receiving data packet %5u \n", getSeqNumber());
 }
 
 void
 Packet::printAckSend(bool retransmission)
 {
-	fprintf(stdout, "Sending ACK packet %u ", getAckNumber());
+	fprintf(stdout, "Sending ACK packet %5u ", getAckNumber());
 	if (retransmission) {
 		fprintf(stdout, "Retransmission");
 	}
@@ -131,13 +146,13 @@ Packet::printAckSend(bool retransmission)
 void
 Packet::printAckReceive()
 {
-	fprintf(stdout, "Receiving ACK packet %u \n", getAckNumber());
+	fprintf(stdout, "Receiving ACK packet %5u \n", getAckNumber());
 }
 
 void
 Packet::printSeqSend(unsigned int CWND, unsigned int SSThresh, bool retransmission)
 {
-	fprintf(stdout, "Sending data packet %u %u %u ", getSeqNumber(), CWND, SSThresh);
+	fprintf(stdout, "Sending data packet %5u %5u %5u ", getSeqNumber(), CWND, SSThresh);
 	if (retransmission) {
 		fprintf(stdout, "Retransmission");
 	}

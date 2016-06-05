@@ -84,6 +84,7 @@ main(int argc, char* argv[])
 
 	int bytesReceived;
 	fsmstate curr_state = HANDSHAKE;
+
 	while(1) {
 
 		if(curr_state == HANDSHAKE) {
@@ -131,6 +132,12 @@ main(int argc, char* argv[])
 				if (received_packet.getSeqNumber() == expectedSeqNum) {
 					int payloadSize = bytesReceived - sizeof(struct TCPHeader);
 					fprintf(stderr, "Payload Size = %d\n", payloadSize);
+
+					// for (int i = 0; i < payloadSize; i++) {
+					// 	fprintf(stderr, "%c",received_packet.data[i]);
+					// }
+					// fprintf(stderr, "\n");
+
 					writestream.write(received_packet.data, payloadSize);
 					writestream.flush();
 					currAckNum = received_packet.getSeqNumber() + payloadSize;
@@ -141,6 +148,7 @@ main(int argc, char* argv[])
 					expectedSeqNum = currAckNum;
 				}
 
+				/* currAckNum will still be our expected AckNumber */
 				Packet delivery_packet;
 				delivery_packet.setHeaderFields(currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, false);
 

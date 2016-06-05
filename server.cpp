@@ -86,15 +86,20 @@ main(int argc, char* argv[])
 	/* Open the desired file for reading */
 	std::ifstream readstream(argv[2], std::ios::in | std::ios::binary);
 
-
+	/* Inform the user that we are reading on a particular port */
 	std::string tmpstr(argv[1]);
 	std::cerr << "Waiting on port " + tmpstr << std::endl;
 
+	/* Initialize variables that will inform us about the program's state and change throughput operation */
+	uint16_t initSeqNum = (uint16_t)(rand() % MAXSEQNUM);
+	uint16_t currWindowSize = INITCONGWINSIZE;
+	uint16_t currSSThresh = INITSSTHRESH;
+	fsmstate curr_state = HANDSHAKE;
+
+
+
 	std::list<Packet> unackedPackets;
 
-	uint16_t initSeqNum = (uint16_t)(rand() % MAXSEQNUM);
-	int currSeqNum = initSeqNum;
-	fsmstate curr_state = HANDSHAKE;
 
 	while (1) {
 
@@ -102,13 +107,14 @@ main(int argc, char* argv[])
 		clock_gettime(CLOCK_MONOTONIC, &now);
 		std::list<Packet>::iterator it = unackedPackets.begin();
 		while (it != unackedPackets.end()) {
-			//if current packed is expired
+			//if current packet is expired, send it out again
 			if (it->hasExpired(now, TIMEOUT)) {
-				//remove, resend, continue
+				it->copyIntoBuf(buf);
+				sendto(sockfd, buf, it->m_size, 0, (struct sockaddr *)&clientAddress, addressLength);
+
+				clock_gettime(CLOCK_MONOTONIC, &(it->m_time)); //start its timer over again
 			}
-			else {
-				it++;
-			}
+			it++;
 		}
 
 		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&clientAddress, &addressLength);
@@ -138,10 +144,16 @@ main(int argc, char* argv[])
 			if (received_packet.isACK()) {
 				received_packet.printAckReceive();
 
+				// std::list<Packet>::iterator it = unackedPackets.begin();
+				// while (it != unackedPackets.end()) {
+				// 	uint16_t expectedAckNumber = it->getExpectedAckNumber();
 
-				// if (readstream.gcount() == 0) {
-				// 	curr_state = TEARDOWN;
-				// 	continue;
+				// 	if (received_packet.getAckNumber() > expectedAckNumber) { //CHECK THIS LOGIC?
+				// 		it.remove(); //???
+				// 	}
+				// 	else {
+				// 		it++;
+				// 	}
 				// }
 
 				Packet delivery_packet;
@@ -152,7 +164,12 @@ main(int argc, char* argv[])
 				memset(buf, 0, BUFSIZE);
 				delivery_packet.copyIntoBuf(buf);
 
-				delivery_packet.printSeqSend(INITCONGWINSIZE, INITSSTHRESH, false);
+				// for (int i = 0; i < BUFSIZE; i++) {
+				// 	fprintf(stderr, "%c", buf[i]);
+				// }
+				// fprintf(stderr, "\n");
+
+				delivery_packet.printSeqSend(currWindowSize, currSSThresh, false);
 
 				sendto(sockfd, buf, sizeof(struct TCPHeader) + readstream.gcount(), 0, (struct sockaddr *)&clientAddress, addressLength);
 
