@@ -156,54 +156,34 @@ main(int argc, char* argv[])
 				// 	}
 				// }
 
-				/* Loop through packets "in flight", check how much data is out there */
-				int bytesSent = 0;
+				Packet delivery_packet;
+				readstream.read(delivery_packet.data, MSS);
+				delivery_packet.setHeaderFields(received_packet.getAckNumber(), received_packet.getSeqNumber(), RECEIVEWINSIZE, false, false, false);
+				delivery_packet.m_size = sizeof(struct TCPHeader) + readstream.gcount();
 
-				while (bytesSent < currWindowSize) {
+				memset(buf, 0, BUFSIZE);
+				delivery_packet.copyIntoBuf(buf);
 
-					Packet delivery_packet;
-					readstream.read(delivery_packet.data, MSS);
-					delivery_packet.setHeaderFields(received_packet.getAckNumber(), received_packet.getSeqNumber(), RECEIVEWINSIZE, false, false, false);
-					delivery_packet.m_size = sizeof(struct TCPHeader) + readstream.gcount();
+				// for (int i = 0; i < BUFSIZE; i++) {
+				// 	fprintf(stderr, "%c", buf[i]);
+				// }
+				// fprintf(stderr, "\n");
 
-					memset(buf, 0, BUFSIZE);
-					delivery_packet.copyIntoBuf(buf);
+				delivery_packet.printSeqSend(currWindowSize, currSSThresh, false);
 
-					delivery_packet.printSeqSend(currWindowSize, currSSThresh, false);
+				sendto(sockfd, buf, sizeof(struct TCPHeader) + readstream.gcount(), 0, (struct sockaddr *)&clientAddress, addressLength);
 
-					sendto(sockfd, buf, sizeof(struct TCPHeader) + readstream.gcount(), 0, (struct sockaddr *)&clientAddress, addressLength);
-
-					if (readstream.gcount() < MSS) {
-						curr_state = TEARDOWN;
-						break;
-					}
-
-					bytesSent += readstream.gcount();
+				if (readstream.gcount() < MSS) {
+					curr_state = TEARDOWN;
+					continue;
 				}
-
-				/* If current window size is less than half of current slow start threshold, double window size */
-				if (currWindowSize < currSSThresh) { 
-					currWindowSize *= 2;
-					if (currWindowSize > RECEIVEWINSIZE/2) { //if window size is greater than 30720/2 = 15360, revert back to 15360
-						currWindowSize /= 2;
-					}
-				}
-				/* If current window size is greater than or equal to current slow start threshold, increase window size by 1 */
-				else {
-					currWindowSize += MSS;
-					if (currWindowSize > RECEIVEWINSIZE/2) {
-						currWindowSize -= MSS;
-					}
-				}
-
-
 			}
 		}
 
 
 		else if (curr_state == TEARDOWN) {
 
-			if (received_packet.isACK()) { //last ACK if we are in teardown phase //CHECK FOR MULTIPLE "LAST ACKs" arriving!
+			if (received_packet.isACK()) { //last ACK if we are in teardown phase
 				received_packet.printAckReceive();
 				std::cerr << "This was the last ACK. Sending a FIN." << std::endl;
 
