@@ -15,6 +15,9 @@
 #include <iostream>
 #include <fstream>
 
+#include <time.h>
+#include "Packet.h"
+
 #define BUFSIZE 			1032
 #define MAXSEQNUM 			30720
 #define INITCONGWINSIZE 	1024
@@ -100,11 +103,15 @@ main(int argc, char* argv[])
 
 		if(curr_state == HANDSHAKE) {
 			/*Set initial SYN TCPHeader*/
-			struct TCPHeader tcphdr_syn;
-			setFields((struct TCPHeader *)&tcphdr_syn, currSeqNum, currAckNum, RECEIVEWINSIZE, false, true, false);
+
+			Packet syn_packet;
+			syn_packet.setHeaderFields(currSeqNum, currAckNum, RECEIVEWINSIZE, false, true, false);
+
+			// struct TCPHeader tcphdr_syn;
+			// setFields((struct TCPHeader *)&tcphdr_syn, currSeqNum, currAckNum, RECEIVEWINSIZE, false, true, false);
 
 			/*Send initial SYN TCPHeader out*/
-			sendto(sockfd, (void *)&tcphdr_syn, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
+			sendto(sockfd, (void *)&syn_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
 
 			curr_state = TRANSFER;
 			continue;
@@ -114,30 +121,42 @@ main(int argc, char* argv[])
 		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&serverAddress, &addressLength);
 
 		if (bytesReceived < (int) sizeof(struct TCPHeader)) {
-			std::cerr << "Problem with received packet or didn't receive anything yet." << std::endl;
+			//std::cerr << "Problem with received packet or didn't receive anything yet." << std::endl;
 			continue;
 		}
+
+		Packet received_packet(buf, bytesReceived);
 
 		memcpy((struct TCPHeader *)&tcphdr_in, buf, sizeof(struct TCPHeader));
 
 		if (curr_state == TRANSFER) {
 			/*if SYN-ACK packet was received*/
-			if(getACK((struct TCPHeader *)&tcphdr_in) && getSYN((struct TCPHeader *)&tcphdr_in) && !getFIN((struct TCPHeader *)&tcphdr_in)) {
+
+			//if(getACK((struct TCPHeader *)&tcphdr_in) && getSYN((struct TCPHeader *)&tcphdr_in) && !getFIN((struct TCPHeader *)&tcphdr_in)) {
+			if (received_packet.isSYNACK()) {
 				fprintf(stderr, "Received a SYN-ACK.\n");
-				currSeqNum = getAckNum((struct TCPHeader *)&tcphdr_in);
-				currAckNum = getSeqNum((struct TCPHeader *)&tcphdr_in) + 1; //consume the SYN-ACK
+				currSeqNum = received_packet.getAckNumber();
+				currAckNum = received_packet.getSeqNumber() + 1; //consume the SYN-ACK
 
 				expectedSeqNum = currAckNum;
 
 				/*Send ACK back to begin the process of transfer*/
-				struct TCPHeader tcphdr_ack;
-				setFields((struct TCPHeader *)&tcphdr_ack, currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, false);
-				sendto(sockfd, (void *)&tcphdr_ack, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
+
+				//struct TCPHeader tcphdr_ack;
+				//setFields((struct TCPHeader *)&tcphdr_ack, currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, false);
+
+				Packet ack_packet;
+				ack_packet.setHeaderFields(currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, false);
+				sendto(sockfd, (void *)&ack_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
+
+				//sendto(sockfd, (void *)&tcphdr_ack, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
 			}
 			
 			/*if data packet, i.e. ASF = 000, send ACK back*/
-			else if (!getACK((struct TCPHeader *)&tcphdr_in) && !getSYN((struct TCPHeader *)&tcphdr_in) && !getFIN((struct TCPHeader *)&tcphdr_in)) {
-				printSEQ(getSeqNum((struct TCPHeader *)&tcphdr_in));
+			else if (received_packet.isDATA()) {
+			//else if (!getACK((struct TCPHeader *)&tcphdr_in) && !getSYN((struct TCPHeader *)&tcphdr_in) && !getFIN((struct TCPHeader *)&tcphdr_in)) {
+				received_packet.printSeqNum();
+				//printSEQ(getSeqNum((struct TCPHeader *)&tcphdr_in));
 
 				if (getSeqNum((struct TCPHeader *)&tcphdr_in) == expectedSeqNum) {
 					int payloadSize = bytesReceived - sizeof(struct TCPHeader);
@@ -147,21 +166,28 @@ main(int argc, char* argv[])
 					currAckNum = getSeqNum((struct TCPHeader *)&tcphdr_in) + payloadSize;
 					if(currAckNum > MAXSEQNUM) {
 						currAckNum -= MAXSEQNUM;
-						fprintf(stderr, "set it to %u\n", currAckNum);
+						//fprintf(stderr, "set it to %u\n", currAckNum);
 					}
 					expectedSeqNum = currAckNum;
 				}
 
-				struct TCPHeader tcphdr_out;
+				Packet delivery_packet;
+				delivery_packet.setHeaderFields(currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, false);
 
-				setFields((struct TCPHeader *)&tcphdr_out, currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, false);
+				//struct TCPHeader tcphdr_out;
 
-				sendto(sockfd, (void *)&tcphdr_out, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
-				printACK(getAckNum((struct TCPHeader *)&tcphdr_out), false);
+				//setFields((struct TCPHeader *)&tcphdr_out, currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, false);
+
+				//sendto(sockfd, (void *)&tcphdr_out, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
+				//printACK(getAckNum((struct TCPHeader *)&tcphdr_out), false);
+
+				sendto(sockfd, (void *)&delivery_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
+				delivery_packet.printAckNum(false);
 			}
 
 			/*if FIN packet from server, send FIN-ACK back and transition to teardown phase*/
-			else if (!getACK((struct TCPHeader *)&tcphdr_in) && !getSYN((struct TCPHeader *)&tcphdr_in) && getFIN((struct TCPHeader *)&tcphdr_in)) {
+			else if (received_packet.isFIN()) {
+			//else if (!getACK((struct TCPHeader *)&tcphdr_in) && !getSYN((struct TCPHeader *)&tcphdr_in) && getFIN((struct TCPHeader *)&tcphdr_in)) {
 				fprintf(stderr, "Received FIN.\n");
 
 				struct TCPHeader tcphdr_out;

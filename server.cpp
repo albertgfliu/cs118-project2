@@ -13,10 +13,14 @@
 #include <iostream>
 #include <fstream>
 
+#include <time.h>
+
 
 #include <stdio.h>      /* printf */
 #include <string.h>     /* strcat */
 #include <stdlib.h>     /* strtol */
+
+#include "Packet.h"
 
 #define BUFSIZE				1032
 #define MAXSEQNUM 			30720
@@ -112,7 +116,7 @@ main(int argc, char* argv[])
 		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&clientAddress, &addressLength);
 
 		if (bytesReceived < (int) sizeof(struct TCPHeader)) {
-			std::cerr << "Invalid packet or no message to get yet." << std::endl;
+			//std::cerr << "Invalid packet or no message to get yet." << std::endl;
 			continue;
 		}
 

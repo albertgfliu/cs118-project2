@@ -24,7 +24,8 @@ class Packet
 		uint16_t getSeqNumber();
 		uint16_t getAckNumber();
 		uint16_t getWindowSize();
-
+		void printSeqNum();
+		void printAckNum(bool retransmission);
 };
 
 #endif

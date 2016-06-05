@@ -3,6 +3,7 @@
 #include "Packet.h"
 #include <time.h>
 #include <string.h>
+#include <stdio.h>
 
 Packet::Packet()
 {
@@ -92,4 +93,20 @@ uint16_t
 Packet::getWindowSize()
 {
 	return getWindow((struct TCPHeader *)&m_header);
+}
+
+void
+Packet::printSeqNum()
+{
+	fprintf(stdout, "Receiving data packet %u \n", getSeqNumber());
+}
+
+void
+Packet::printAckNum(bool retransmission)
+{
+	fprintf(stdout, "Sending ACK packet %u ", getAckNumber());
+	if (retransmission) {
+		fprintf(stdout, "Retransmission");
+	}
+	fprintf(stdout, "\n");
 }
