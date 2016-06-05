@@ -146,12 +146,12 @@ main(int argc, char* argv[])
 			else if (received_packet.isDATA()) {
 				received_packet.printSeqReceive();
 
-				if (getSeqNum((struct TCPHeader *)&tcphdr_in) == expectedSeqNum) {
+				if (received_packet.getSeqNumber() == expectedSeqNum) {
 					int payloadSize = bytesReceived - sizeof(struct TCPHeader);
 					fprintf(stderr, "Payload Size = %d\n", payloadSize);
-					writestream.write(buf + sizeof(struct TCPHeader), payloadSize);
+					writestream.write(received_packet.data, payloadSize);
 					writestream.flush();
-					currAckNum = getSeqNum((struct TCPHeader *)&tcphdr_in) + payloadSize;
+					currAckNum = received_packet.getSeqNumber() + payloadSize;
 					if(currAckNum > MAXSEQNUM) {
 						currAckNum -= MAXSEQNUM;
 						//fprintf(stderr, "set it to %u\n", currAckNum);
