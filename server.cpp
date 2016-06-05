@@ -120,14 +120,18 @@ main(int argc, char* argv[])
 			continue;
 		}
 
+		Packet received_packet(buf, bytesReceived);
+
 		memcpy((struct TCPHeader *)&tcphdr_in, buf, sizeof(struct TCPHeader));
 
 		if (curr_state == HANDSHAKE) {
-			if (getSYN((struct TCPHeader *)&tcphdr_in)) {
-				fprintf(stderr, "Received a SYN.\n");
-				struct TCPHeader tcphdr_synack;
-				setFields((struct TCPHeader *)&tcphdr_synack, initSeqNum, getSeqNum((struct TCPHeader *)&tcphdr_in.seqnum) + 1, RECEIVEWINSIZE, true, true, false);
-				sendto(sockfd, (struct TCPHeader *)&tcphdr_synack, sizeof(tcphdr_synack), 0, (struct sockaddr *)&clientAddress, addressLength);
+			if (received_packet.isSYN()) {
+				std::cerr << "Received a SYN." << std::endl;
+
+				Packet synack_packet;
+				synack_packet.setHeaderFields(initSeqNum, received_packet.getSeqNumber()+1, RECEIVEWINSIZE, true, true, false);
+
+				sendto(sockfd, (void *)&synack_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
 				std::cerr << "Just sent out a SYN-ACK. " << std::endl;
 				curr_state = TRANSFER;
 				continue;
@@ -135,14 +139,25 @@ main(int argc, char* argv[])
 		}
 
 		else if (curr_state == TRANSFER) {
-			if (getACK((struct TCPHeader *)&tcphdr_in)) {
-				printACK(getAckNum((struct TCPHeader *)&tcphdr_in));
-				struct TCPHeader tcphdr_out;
-				setFields((struct TCPHeader *)&tcphdr_out, getAckNum((struct TCPHeader *)&tcphdr_in), getSeqNum((struct TCPHeader *)&tcphdr_in), RECEIVEWINSIZE, false, false, false);
-				memcpy(buf, (struct TCPHeader *)&tcphdr_out, sizeof(struct TCPHeader));
-				readstream.read(buf + sizeof(struct TCPHeader), MSS);
+			if (received_packet.isACK()) {
+				received_packet.printAckReceive();
 
-				printDATA(getSeqNum((struct TCPHeader *)&tcphdr_out), INITCONGWINSIZE, INITSSTHRESH, false);
+
+				// if (readstream.gcount() == 0) {
+				// 	curr_state = TEARDOWN;
+				// 	continue;
+				// }
+
+				Packet delivery_packet;
+				readstream.read(delivery_packet.data, MSS);
+				delivery_packet.setHeaderFields(received_packet.getAckNumber(), received_packet.getSeqNumber(), RECEIVEWINSIZE, false, false, false);
+				delivery_packet.m_size = sizeof(struct TCPHeader) + readstream.gcount();
+
+				memset(buf, 0, BUFSIZE);
+				delivery_packet.copyIntoBuf(buf);
+
+				delivery_packet.printSeqSend(INITCONGWINSIZE, INITSSTHRESH, false);
+
 				sendto(sockfd, buf, sizeof(struct TCPHeader) + readstream.gcount(), 0, (struct sockaddr *)&clientAddress, addressLength);
 
 				if (readstream.gcount() < MSS) {
@@ -154,17 +169,18 @@ main(int argc, char* argv[])
 
 
 		else if (curr_state == TEARDOWN) {
-			if ((!getFIN((struct TCPHeader *)&tcphdr_in)) && getACK((struct TCPHeader *)&tcphdr_in)) { //if it is the last ACK
-				printACK(getAckNum((struct TCPHeader *)&tcphdr_in));
-				fprintf(stderr, "This was the last ACK.\n");
+			if (received_packet.isACK()) { //last ACK if we are in teardown phase
+				received_packet.printAckReceive();
+				std::cerr << "This was the last ACK. Sending a FIN." << std::endl;
 
-				fprintf(stderr, "Sending a FIN.\n");
+				Packet fin_packet;
+				fin_packet.setHeaderFields(received_packet.getAckNumber(), received_packet.getSeqNumber(), RECEIVEWINSIZE, false, false, true);
 				struct TCPHeader tcphdr_fin;
 				setFields((struct TCPHeader *)&tcphdr_fin, 0, 0, RECEIVEWINSIZE, false, false, true);
 				sendto(sockfd, (struct TCPHeader *)&tcphdr_fin, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
 			}
 
-			else if (getFIN((struct TCPHeader *)&tcphdr_in) && getACK((struct TCPHeader *)&tcphdr_in)) { //if it is FIN-ACK
+			else if (received_packet.isFINACK()) {
 				fprintf(stderr, "Got the FIN-ACK. Sending an ACK and exiting.\n");
 				struct TCPHeader tcphdr_ack;
 				setFields((struct TCPHeader *)&tcphdr_ack, 0, 0, RECEIVEWINSIZE, true, false, false);

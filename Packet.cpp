@@ -10,11 +10,24 @@ Packet::Packet()
 	m_size = sizeof(struct TCPHeader);
 }
 
-Packet::Packet(char* buf, unsigned int length)
+Packet::Packet(char *buf, unsigned int length)
 {
 	memcpy((void *)&m_header, buf, sizeof(struct TCPHeader));
 	memcpy(data, buf, length - sizeof(struct TCPHeader));
 	m_size = length;
+}
+
+void 
+Packet::copyIntoBuf(char *buf)
+{
+	memcpy((void *)buf, (void *)&m_header, sizeof(struct TCPHeader));
+	memcpy((void *)(buf + sizeof(struct TCPHeader)), data, (m_size - sizeof(struct TCPHeader)));
+}
+
+void
+Packet::copyHeaderIntoBuf(char *buf)
+{
+	memcpy((void *)buf, (void *)&m_header, sizeof(struct TCPHeader));
 }
 
 bool 
@@ -96,15 +109,31 @@ Packet::getWindowSize()
 }
 
 void
-Packet::printSeqNum()
+Packet::printSeqReceive()
 {
 	fprintf(stdout, "Receiving data packet %u \n", getSeqNumber());
 }
 
 void
-Packet::printAckNum(bool retransmission)
+Packet::printAckSend(bool retransmission)
 {
 	fprintf(stdout, "Sending ACK packet %u ", getAckNumber());
+	if (retransmission) {
+		fprintf(stdout, "Retransmission");
+	}
+	fprintf(stdout, "\n");
+}
+
+void
+Packet::printAckReceive()
+{
+	fprintf(stdout, "Receiving ACK packet %u \n", getAckNumber());
+}
+
+void
+Packet::printSeqSend(unsigned int CWND, unsigned int SSThresh, bool retransmission)
+{
+	fprintf(stdout, "Sending data packet %u %u %u ", getSeqNumber(), CWND, SSThresh);
 	if (retransmission) {
 		fprintf(stdout, "Retransmission");
 	}
