@@ -144,10 +144,17 @@ main(int argc, char* argv[])
 			if (received_packet.isACK()) {
 				received_packet.printAckReceive();
 
-				//Based upon received ACK number and current window size, remove packets inside unackedPackets
-				/*
-				* IMPLEMENT HERE
-				*/
+				// std::list<Packet>::iterator it = unackedPackets.begin();
+				// while (it != unackedPackets.end()) {
+				// 	uint16_t expectedAckNumber = it->getExpectedAckNumber();
+
+				// 	if (received_packet.getAckNumber() > expectedAckNumber) { //CHECK THIS LOGIC?
+				// 		it.remove(); //???
+				// 	}
+				// 	else {
+				// 		it++;
+				// 	}
+				// }
 
 				Packet delivery_packet;
 				readstream.read(delivery_packet.data, MSS);
