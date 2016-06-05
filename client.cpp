@@ -14,15 +14,18 @@
 #include <stdlib.h>     /* strtol */
 #include <iostream>
 #include <fstream>
+#include <list>
 
 #include <time.h>
 #include "Packet.h"
+
 
 #define BUFSIZE 			1032
 #define MAXSEQNUM 			30720
 #define INITCONGWINSIZE 	1024
 #define INITSSTHRESH		30720
 #define RECEIVEWINSIZE		30720
+#define TIMEOUT				500000000
 
 const char *byte_to_binary(int x)
 {
@@ -36,24 +39,6 @@ const char *byte_to_binary(int x)
     }
 
     return b;
-}
-
-void
-printACK(unsigned int ackNum, bool retransmission)
-{
-	//CHANGE TO STDOUT LATER
-	fprintf(stderr, "Sending ACK packet %u ", ackNum);
-	if (retransmission) {
-		fprintf(stdout, "Retransmission");
-	}
-	fprintf(stderr, "\n");
-}
-
-void
-printSEQ(unsigned int seqNum)
-{
-	//CHANGE TO STDOUT LATER
-	fprintf(stderr, "Receiving data packet %u \n", seqNum);
 }
 
 int
@@ -113,7 +98,6 @@ main(int argc, char* argv[])
 			continue;
 		}
 
-		struct TCPHeader tcphdr_in;
 		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&serverAddress, &addressLength);
 
 		if (bytesReceived < (int) sizeof(struct TCPHeader)) {
@@ -122,8 +106,6 @@ main(int argc, char* argv[])
 		}
 
 		Packet received_packet(buf, bytesReceived);
-
-		memcpy((struct TCPHeader *)&tcphdr_in, buf, sizeof(struct TCPHeader));
 
 		if (curr_state == TRANSFER) {
 			/*if SYN-ACK packet was received*/

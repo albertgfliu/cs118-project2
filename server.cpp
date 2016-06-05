@@ -12,9 +12,9 @@
 #include "TCPHeader.h"
 #include <iostream>
 #include <fstream>
+#include <list>
 
 #include <time.h>
-
 
 #include <stdio.h>      /* printf */
 #include <string.h>     /* strcat */
@@ -28,24 +28,7 @@
 #define INITSSTHRESH		30720
 #define RECEIVEWINSIZE		30720
 #define MSS					1024
-
-void
-printACK(unsigned int ackNum)
-{
-	//CHANGE TO STDOUT LATER
-	fprintf(stderr, "Receiving ACK packet %u \n", ackNum);
-}
-
-void
-printDATA(unsigned int seqNum, unsigned int CWND, unsigned int SSThresh, bool retransmission)
-{
-	//CHANGE TO STDOUT LATER
-	fprintf(stderr, "Sending data packet %u %u %u ", seqNum, CWND, SSThresh);
-	if (retransmission) {
-		fprintf(stdout, "Retransmission");
-	}
-	fprintf(stderr, "\n");
-}
+#define TIMEOUT				500000000
 
 const char *byte_to_binary(int x)
 {
@@ -107,12 +90,27 @@ main(int argc, char* argv[])
 	std::string tmpstr(argv[1]);
 	std::cerr << "Waiting on port " + tmpstr << std::endl;
 
+	std::list<Packet> unackedPackets;
+
 	uint16_t initSeqNum = (uint16_t)(rand() % MAXSEQNUM);
 	int currSeqNum = initSeqNum;
 	fsmstate curr_state = HANDSHAKE;
 
 	while (1) {
-		struct TCPHeader tcphdr_in;
+
+		struct timespec now;
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		std::list<Packet>::iterator it = unackedPackets.begin();
+		while (it != unackedPackets.end()) {
+			//if current packed is expired
+			if (it->hasExpired(now, TIMEOUT)) {
+				//remove, resend, continue
+			}
+			else {
+				it++;
+			}
+		}
+
 		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&clientAddress, &addressLength);
 
 		if (bytesReceived < (int) sizeof(struct TCPHeader)) {
@@ -122,14 +120,12 @@ main(int argc, char* argv[])
 
 		Packet received_packet(buf, bytesReceived);
 
-		memcpy((struct TCPHeader *)&tcphdr_in, buf, sizeof(struct TCPHeader));
-
 		if (curr_state == HANDSHAKE) {
 			if (received_packet.isSYN()) {
 				std::cerr << "Received a SYN." << std::endl;
 
 				Packet synack_packet;
-				synack_packet.setHeaderFields(initSeqNum, received_packet.getSeqNumber()+1, RECEIVEWINSIZE, true, true, false);
+				synack_packet.setHeaderFields(initSeqNum, received_packet.getSeqNumber() + 1, RECEIVEWINSIZE, true, true, false);
 
 				sendto(sockfd, (void *)&synack_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
 				std::cerr << "Just sent out a SYN-ACK. " << std::endl;
@@ -169,6 +165,7 @@ main(int argc, char* argv[])
 
 
 		else if (curr_state == TEARDOWN) {
+
 			if (received_packet.isACK()) { //last ACK if we are in teardown phase
 				received_packet.printAckReceive();
 				std::cerr << "This was the last ACK. Sending a FIN." << std::endl;
@@ -180,14 +177,15 @@ main(int argc, char* argv[])
 				sendto(sockfd, (struct TCPHeader *)&tcphdr_fin, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
 			}
 
-			else if (received_packet.isFINACK()) {
+			else if (received_packet.isFINACK()) { //if received a FIN-ACK, then send an ACK and exit. we don't care if they respond or not.
 				fprintf(stderr, "Got the FIN-ACK. Sending an ACK and exiting.\n");
 				struct TCPHeader tcphdr_ack;
-				setFields((struct TCPHeader *)&tcphdr_ack, 0, 0, RECEIVEWINSIZE, true, false, false);
+				setFields((struct TCPHeader *)&tcphdr_ack, received_packet.getAckNumber(), received_packet.getSeqNumber() + 1, RECEIVEWINSIZE, true, false, false);
 				sendto(sockfd, (struct TCPHeader *)&tcphdr_ack, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
 				break;
 			}
 		}
+
 	}
 
 

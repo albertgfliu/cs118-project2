@@ -4,10 +4,13 @@
 #include <time.h>
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
+#include <sys/types.h>
 
 Packet::Packet()
 {
 	m_size = sizeof(struct TCPHeader);
+	clock_gettime(CLOCK_MONOTONIC, &m_time);
 }
 
 Packet::Packet(char *buf, unsigned int length)
@@ -15,6 +18,7 @@ Packet::Packet(char *buf, unsigned int length)
 	memcpy((void *)&m_header, buf, sizeof(struct TCPHeader));
 	memcpy(data, buf, length - sizeof(struct TCPHeader));
 	m_size = length;
+	clock_gettime(CLOCK_MONOTONIC, &m_time);
 }
 
 void 
@@ -138,4 +142,15 @@ Packet::printSeqSend(unsigned int CWND, unsigned int SSThresh, bool retransmissi
 		fprintf(stdout, "Retransmission");
 	}
 	fprintf(stdout, "\n");
+}
+
+bool
+Packet::hasExpired(struct timespec now, int duration_ns)
+{
+	int elapsed_time;
+	elapsed_time = (int) (((double)now.tv_sec*pow(10,9) + (double)now.tv_nsec) - ((double)m_time.tv_sec*pow(10,9) + (double)m_time.tv_nsec));
+	if (elapsed_time > duration_ns) {
+		return true;
+	}
+	return false;
 }

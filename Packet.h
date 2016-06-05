@@ -12,7 +12,7 @@ class Packet
 		char data[1024];
 		struct TCPHeader m_header;
 		int m_size;
-		struct timeval m_time;
+		struct timespec m_time;
 
 		/* Constructors */
 		Packet();
@@ -40,6 +40,8 @@ class Packet
 		bool isFIN();
 		bool isFINACK();
 		bool isDATA();
+
+		bool hasExpired(struct timespec now, int duration_ns);
 		
 		
 };
