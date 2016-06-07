@@ -29,10 +29,11 @@ class Packet
 		uint16_t getExpectedAckNumber(int maxSeqNum);
 
 		/* Print Functions */
+		void printSYNSend(bool retransmission);
 		void printSeqReceive();
-		void printAckSend(bool retransmission);
+		void printAckSend(bool retransmission, bool synflag, bool finflag);
 
-		void printSeqSend(unsigned int CWND, unsigned int SSThresh, bool retransmission);
+		void printSeqSend(unsigned int CWND, unsigned int SSThresh, bool retransmission, bool synflag, bool finflag);
 		void printAckReceive();
 
 		/* Boolean Identification Functions */

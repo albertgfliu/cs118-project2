@@ -30,20 +30,6 @@
 #define MSS					1024
 #define TIMEOUT				500000000
 
-const char *byte_to_binary(int x)
-{
-    static char b[9];
-    b[0] = '\0';
-
-    int z;
-    for (z = 128; z > 0; z >>= 1)
-    {
-        strcat(b, ((x & z) == z) ? "1" : "0");
-    }
-
-    return b;
-}
-
 int 
 main(int argc, char* argv[])
 {
@@ -88,10 +74,11 @@ main(int argc, char* argv[])
 
 	/* Inform the user that we are reading on a particular port */
 	std::string tmpstr(argv[1]);
-	std::cerr << "Waiting on port " + tmpstr << std::endl;
+	//std::cerr << "Waiting on port " + tmpstr << std::endl;
 
 	/* Initialize variables that will inform us about the program's state and change throughput operation */
-	uint16_t initSeqNum = (uint16_t)(rand() % MAXSEQNUM);
+	//uint16_t initSeqNum = (uint16_t)(rand() % MAXSEQNUM);
+	uint16_t initSeqNum = 0;
 	uint16_t currWindowSize = INITCONGWINSIZE;
 	uint16_t currSSThresh = INITSSTHRESH;
 	fsmstate curr_state = HANDSHAKE;
@@ -112,7 +99,7 @@ main(int argc, char* argv[])
 				fprintf(stderr, "Packet with sequence number %u expired\n", it->getSeqNumber());
 				it->copyIntoBuf(buf);
 				sendto(sockfd, buf, it->m_size, 0, (struct sockaddr *)&clientAddress, addressLength);
-				it->printSeqSend(currWindowSize, currSSThresh, true);
+				it->printSeqSend(currWindowSize, currSSThresh, true, false, false);
 
 				clock_gettime(CLOCK_MONOTONIC, &(it->m_time)); //start its timer over again
 
@@ -131,13 +118,15 @@ main(int argc, char* argv[])
 
 		if (curr_state == HANDSHAKE) {
 			if (received_packet.isSYN()) {
-				std::cerr << "Received a SYN." << std::endl;
+				received_packet.printAckReceive();
+				//std::cerr << "Received a SYN." << std::endl;
 
 				Packet synack_packet;
 				synack_packet.setHeaderFields(initSeqNum, received_packet.getSeqNumber() + 1, RECEIVEWINSIZE, true, true, false);
 
 				sendto(sockfd, (void *)&synack_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
-				std::cerr << "Just sent out a SYN-ACK. " << std::endl;
+				synack_packet.printSeqSend(currWindowSize, currSSThresh, false, true, false);
+				//std::cerr << "Just sent out a SYN-ACK. " << std::endl;
 				curr_state = TRANSFER;
 				continue;
 			}
@@ -186,7 +175,7 @@ main(int argc, char* argv[])
 				for (std::list<Packet>::iterator it = unackedPackets.begin(); it != unackedPackets.end(); it++) {
 					bytesInFlight += (it->m_size - sizeof(struct TCPHeader));
 				}
-				fprintf(stderr, "%u bytes in flight\n", bytesInFlight);
+				//fprintf(stderr, "%u bytes in flight\n", bytesInFlight);
 				if (bytesInFlight < currWindowSize) {
 					//keep going
 				}
@@ -208,10 +197,9 @@ main(int argc, char* argv[])
 				// 	fprintf(stderr, "%c", buf[i]);
 				// }
 				// fprintf(stderr, "\n");
-
-				delivery_packet.printSeqSend(currWindowSize, currSSThresh, false);
-
+				
 				sendto(sockfd, buf, sizeof(struct TCPHeader) + readstream.gcount(), 0, (struct sockaddr *)&clientAddress, addressLength);
+				delivery_packet.printSeqSend(currWindowSize, currSSThresh, false, false, false);
 
 				/* MAY NOT WORK */
 				clock_gettime(CLOCK_MONOTONIC, &delivery_packet.m_time);
@@ -230,13 +218,13 @@ main(int argc, char* argv[])
 
 			if (received_packet.isACK()) { //last ACK if we are in teardown phase
 				received_packet.printAckReceive();
-				std::cerr << "This was the last ACK. Sending a FIN." << std::endl;
 
 				Packet fin_packet;
 				fin_packet.setHeaderFields(received_packet.getAckNumber(), received_packet.getSeqNumber(), RECEIVEWINSIZE, false, false, true);
 				struct TCPHeader tcphdr_fin;
 				setFields((struct TCPHeader *)&tcphdr_fin, 0, 0, RECEIVEWINSIZE, false, false, true);
 				sendto(sockfd, (struct TCPHeader *)&tcphdr_fin, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
+				fin_packet.printSeqSend(currWindowSize, currSSThresh, false, false, true);
 			}
 
 			else if (received_packet.isFINACK()) { //if received a FIN-ACK, then send an ACK and exit. we don't care if they respond or not.

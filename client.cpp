@@ -27,20 +27,6 @@
 #define RECEIVEWINSIZE		30720
 #define TIMEOUT				500000000
 
-const char *byte_to_binary(int x)
-{
-    static char b[9];
-    b[0] = '\0';
-
-    int z;
-    for (z = 128; z > 0; z >>= 1)
-    {
-        strcat(b, ((x & z) == z) ? "1" : "0");
-    }
-
-    return b;
-}
-
 int
 main(int argc, char* argv[])
 {
@@ -85,18 +71,44 @@ main(int argc, char* argv[])
 	int bytesReceived;
 	fsmstate curr_state = HANDSHAKE;
 
+	Packet syn_packet;
+	int syn_tries = 0;
+	bool syn_acked = false;
+
+	struct timespec fin_timer;
+	Packet fin_packet;
+
 	while(1) {
 
 		if(curr_state == HANDSHAKE) {
 			/*Set initial SYN TCPHeader*/
 
-			Packet syn_packet;
 			syn_packet.setHeaderFields(currSeqNum, currAckNum, RECEIVEWINSIZE, false, true, false);
+			clock_gettime(CLOCK_MONOTONIC, &syn_packet.m_time);
 
 			sendto(sockfd, (void *)&syn_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
+			syn_packet.printSYNSend(false);
+
+			syn_tries++;
 
 			curr_state = TRANSFER;
 			continue;
+		}
+
+		//check for syn-packet expiration
+		if (syn_acked == false) {
+			struct timespec now;
+			clock_gettime(CLOCK_MONOTONIC, &now);
+			if (syn_packet.hasExpired(now, TIMEOUT)) {
+				if (syn_tries > 2) {
+					fprintf(stderr, "Could not connect to server in 3 tries. Exiting.\n");
+					break;
+				}
+				sendto(sockfd, (void *)&syn_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
+				syn_packet.printSYNSend(true);
+				clock_gettime(CLOCK_MONOTONIC, &syn_packet.m_time);
+				syn_tries++;
+			}
 		}
 
 		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&serverAddress, &addressLength);
@@ -112,7 +124,9 @@ main(int argc, char* argv[])
 			/*if SYN-ACK packet was received*/
 
 			if (received_packet.isSYNACK()) {
-				fprintf(stderr, "Received a SYN-ACK.\n");
+				received_packet.printSeqReceive();
+
+				//fprintf(stderr, "Received a SYN-ACK.\n");
 				currSeqNum = received_packet.getAckNumber();
 				currAckNum = received_packet.getSeqNumber() + 1; //consume the SYN-ACK
 
@@ -123,6 +137,9 @@ main(int argc, char* argv[])
 				Packet ack_packet;
 				ack_packet.setHeaderFields(currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, false);
 				sendto(sockfd, (void *)&ack_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
+				ack_packet.printAckSend(false, false, false);
+
+				syn_acked = true;
 			}
 			
 			/*if data packet, i.e. ASF = 000, send ACK back*/
@@ -153,28 +170,33 @@ main(int argc, char* argv[])
 				delivery_packet.setHeaderFields(currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, false);
 
 				sendto(sockfd, (void *)&delivery_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
-				delivery_packet.printAckSend(false);
+				delivery_packet.printAckSend(false, false, false);
 			}
 
 			/*if FIN packet from server, send FIN-ACK back and transition to teardown phase*/
 			else if (received_packet.isFIN()) {
-				fprintf(stderr, "Received FIN.\n");
+				received_packet.printSeqReceive();
+				//fprintf(stderr, "Received FIN.\n");
 
-				Packet fin_packet;
 				currSeqNum++;
 				fin_packet.setHeaderFields(currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, true);
 
 				sendto(sockfd, (void *)&fin_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
+				fin_packet.printAckSend(false, false, true);
 				curr_state = TEARDOWN;
 				continue;
 			}
+
 		}
 
 		if (curr_state == TEARDOWN) {
+			/*Retransmit FIN here if no reply is received*/
+
 
 			/*if ACK from server, we are done*/
 			if (received_packet.isACK()) {
-				std::cerr << "Received ACK, terminating client." << std::endl;
+				received_packet.printSeqReceive();
+				//std::cerr << "Received ACK, terminating client." << std::endl;
 				break;
 			}
 		}

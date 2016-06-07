@@ -130,33 +130,56 @@ Packet::getExpectedAckNumber(int maxSeqNum)
 void
 Packet::printSeqReceive()
 {
-	fprintf(stderr, "Receiving data packet %5u \n", getSeqNumber());
+	fprintf(stdout, "Receiving packet %u\n", getSeqNumber());
 }
 
 void
-Packet::printAckSend(bool retransmission)
+Packet::printSYNSend(bool retransmission)
 {
-	fprintf(stderr, "Sending ACK packet %5u ", getAckNumber());
+	fprintf(stdout, "Sending packet SYN");
 	if (retransmission) {
-		fprintf(stdout, "Retransmission");
+		fprintf(stdout, " Retransmission");
 	}
-	fprintf(stderr, "\n");
+	fprintf(stdout, "\n");
+}
+
+void
+Packet::printAckSend(bool retransmission, bool synflag, bool finflag)
+{
+	fprintf(stdout, "Sending packet %u", getAckNumber());
+	if (retransmission) {
+		fprintf(stdout, " Retransmission");
+	}
+	if (synflag) {
+		fprintf(stdout, " SYN");
+	}
+	if (finflag) {
+		fprintf(stdout, " FIN");
+	}
+	fprintf(stdout, "\n");
 }
 
 void
 Packet::printAckReceive()
 {
-	fprintf(stderr, "Receiving ACK packet %5u \n", getAckNumber());
+	fprintf(stdout, "Receiving packet %u\n", getAckNumber());
 }
 
 void
-Packet::printSeqSend(unsigned int CWND, unsigned int SSThresh, bool retransmission)
+Packet::printSeqSend(unsigned int CWND, unsigned int SSThresh, bool retransmission, bool synflag, bool finflag)
 {
-	fprintf(stderr, "Sending data packet %5u %5u %5u ", getSeqNumber(), CWND, SSThresh);
+	fprintf(stdout, "Sending packet %u %u %u", getSeqNumber(), CWND, SSThresh);
 	if (retransmission) {
-		fprintf(stderr, "Retransmission");
+		fprintf(stdout, " Retransmission");
 	}
-	fprintf(stderr, "\n");
+	if (synflag) {
+		fprintf(stdout, " SYN");
+	}
+	if (finflag) {
+		fprintf(stdout, " FIN");
+	}
+
+	fprintf(stdout, "\n");
 }
 
 bool
