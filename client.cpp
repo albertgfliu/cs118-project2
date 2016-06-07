@@ -75,8 +75,8 @@ main(int argc, char* argv[])
 	int syn_tries = 0;
 	bool syn_acked = false;
 
-	struct timespec fin_timer;
 	Packet fin_packet;
+	bool got_final_ack = false;
 
 	while(1) {
 
@@ -110,6 +110,19 @@ main(int argc, char* argv[])
 				syn_tries++;
 			}
 		}
+
+		//check for fin-ack packet expiration
+		if (curr_state == TEARDOWN) {
+			struct timespec now;
+			clock_gettime(CLOCK_MONOTONIC, &now);
+			if(fin_packet.hasExpired(now, TIMEOUT)) {
+				clock_gettime(CLOCK_MONOTONIC, &fin_packet.m_time);
+
+				sendto(sockfd, (void *)&fin_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
+				fin_packet.printAckSend(true, false, true);
+			}
+		}
+
 
 		bytesReceived = recvfrom(sockfd, buf, BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&serverAddress, &addressLength);
 
@@ -180,18 +193,21 @@ main(int argc, char* argv[])
 
 				currSeqNum++;
 				fin_packet.setHeaderFields(currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, true);
+				clock_gettime(CLOCK_MONOTONIC, &fin_packet.m_time);
 
 				sendto(sockfd, (void *)&fin_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
 				fin_packet.printAckSend(false, false, true);
+
 				curr_state = TEARDOWN;
+
+
+
 				continue;
 			}
 
 		}
 
 		if (curr_state == TEARDOWN) {
-			/*Retransmit FIN here if no reply is received*/
-
 
 			/*if ACK from server, we are done*/
 			if (received_packet.isACK()) {
