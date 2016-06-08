@@ -25,8 +25,9 @@
 #define BUFSIZE				1032
 #define MAXSEQNUM 			30720
 #define INITCONGWINSIZE 	1024
-#define INITSSTHRESH		30720
-#define RECEIVEWINSIZE		30720
+#define SPECIALSSTHRESH		1024
+#define INITSSTHRESH		15360
+#define RECEIVEWINSIZE		15360
 #define MSS					1024
 #define TIMEOUT				500000000
 
@@ -77,16 +78,18 @@ main(int argc, char* argv[])
 	//std::cerr << "Waiting on port " + tmpstr << std::endl;
 
 	/* Initialize variables that will inform us about the program's state and change throughput operation */
-	//uint16_t initSeqNum = (uint16_t)(rand() % MAXSEQNUM);
-	uint16_t initSeqNum = 0;
+	uint16_t initSeqNum = (uint16_t)(rand() % MAXSEQNUM);
+	//uint16_t initSeqNum = 0;
 	uint16_t currWindowSize = INITCONGWINSIZE;
 	uint16_t currSSThresh = INITSSTHRESH;
 	fsmstate curr_state = HANDSHAKE;
 
-
-
 	std::list<Packet> unackedPackets;
 
+	Packet synack_packet;
+	bool inSynAckTimeout = false;
+	Packet finalack_packet;
+	bool inTimeOutPeriod = false;
 
 	while (1) {
 
@@ -96,10 +99,15 @@ main(int argc, char* argv[])
 		while (it != unackedPackets.end()) {
 			//if current packet is expired, send it out again
 			if (it->hasExpired(now, TIMEOUT)) {
-				fprintf(stderr, "Packet with sequence number %u expired\n", it->getSeqNumber());
+				//fprintf(stderr, "Packet with sequence number %u expired\n", it->getSeqNumber());
 				it->copyIntoBuf(buf);
 				sendto(sockfd, buf, it->m_size, 0, (struct sockaddr *)&clientAddress, addressLength);
+
+
+
 				it->printSeqSend(currWindowSize, currSSThresh, true, false, false);
+
+
 
 				clock_gettime(CLOCK_MONOTONIC, &(it->m_time)); //start its timer over again
 
@@ -111,6 +119,21 @@ main(int argc, char* argv[])
 
 		if (bytesReceived < (int) sizeof(struct TCPHeader)) {
 			//std::cerr << "Invalid packet or no message to get yet." << std::endl;
+
+			if (inSynAckTimeout == true) {
+				if (synack_packet.hasExpired(now, TIMEOUT)) {
+					sendto(sockfd, (void *)&synack_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
+					synack_packet.printSeqSend(currWindowSize, SPECIALSSTHRESH, true, true, false);
+					clock_gettime(CLOCK_MONOTONIC, &synack_packet.m_time);
+				}
+			}
+
+			if (inTimeOutPeriod == true) {
+				if (finalack_packet.hasExpired(now, 2*TIMEOUT)) {
+					break;
+				}
+			}
+
 			continue;
 		}
 
@@ -121,19 +144,21 @@ main(int argc, char* argv[])
 				received_packet.printAckReceive();
 				//std::cerr << "Received a SYN." << std::endl;
 
-				Packet synack_packet;
 				synack_packet.setHeaderFields(initSeqNum, received_packet.getSeqNumber() + 1, RECEIVEWINSIZE, true, true, false);
 
 				sendto(sockfd, (void *)&synack_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
-				synack_packet.printSeqSend(currWindowSize, currSSThresh, false, true, false);
+				synack_packet.printSeqSend(currWindowSize, SPECIALSSTHRESH, false, true, false);
+				clock_gettime(CLOCK_MONOTONIC, &synack_packet.m_time);
 				//std::cerr << "Just sent out a SYN-ACK. " << std::endl;
 				curr_state = TRANSFER;
+				inSynAckTimeout = true;
 				continue;
 			}
 		}
 
 		else if (curr_state == TRANSFER) {
 			if (received_packet.isACK()) {
+				inSynAckTimeout = false;
 				received_packet.printAckReceive();
 
 				//Based upon received ACK number and current window size, remove packets inside unackedPackets
@@ -171,17 +196,17 @@ main(int argc, char* argv[])
 
 				//Count number of bytes in flight and don't send if still unacked packets
 				
-				uint16_t bytesInFlight = 0;
-				for (std::list<Packet>::iterator it = unackedPackets.begin(); it != unackedPackets.end(); it++) {
-					bytesInFlight += (it->m_size - sizeof(struct TCPHeader));
-				}
-				//fprintf(stderr, "%u bytes in flight\n", bytesInFlight);
-				if (bytesInFlight < currWindowSize) {
-					//keep going
-				}
-				else {
-					continue;
-				}
+				// uint16_t bytesInFlight = 0;
+				// for (std::list<Packet>::iterator it = unackedPackets.begin(); it != unackedPackets.end(); it++) {
+				// 	bytesInFlight += (it->m_size - sizeof(struct TCPHeader));
+				// }
+				// //fprintf(stderr, "%u bytes in flight\n", bytesInFlight);
+				// if (bytesInFlight < currWindowSize) {
+				// 	//keep going
+				// }
+				// else {
+				// 	continue;
+				// }
 
 				/*END MAY NOT WORK */
 
@@ -192,11 +217,6 @@ main(int argc, char* argv[])
 
 				memset(buf, 0, BUFSIZE);
 				delivery_packet.copyIntoBuf(buf);
-
-				// for (int i = 0; i < BUFSIZE; i++) {
-				// 	fprintf(stderr, "%c", buf[i]);
-				// }
-				// fprintf(stderr, "\n");
 				
 				sendto(sockfd, buf, sizeof(struct TCPHeader) + readstream.gcount(), 0, (struct sockaddr *)&clientAddress, addressLength);
 				delivery_packet.printSeqSend(currWindowSize, currSSThresh, false, false, false);
@@ -219,21 +239,31 @@ main(int argc, char* argv[])
 			if (received_packet.isACK()) { //last ACK if we are in teardown phase
 				received_packet.printAckReceive();
 
+				unackedPackets.clear();
+
 				Packet fin_packet;
 				fin_packet.setHeaderFields(received_packet.getAckNumber(), received_packet.getSeqNumber(), RECEIVEWINSIZE, false, false, true);
-				struct TCPHeader tcphdr_fin;
-				setFields((struct TCPHeader *)&tcphdr_fin, 0, 0, RECEIVEWINSIZE, false, false, true);
-				sendto(sockfd, (struct TCPHeader *)&tcphdr_fin, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
+				//struct TCPHeader tcphdr_fin;
+				//setFields((struct TCPHeader *)&tcphdr_fin, 0, 0, RECEIVEWINSIZE, false, false, true);
+				sendto(sockfd, (void *)&fin_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
 				fin_packet.printSeqSend(currWindowSize, currSSThresh, false, false, true);
 			}
 
 			else if (received_packet.isFINACK()) { //if received a FIN-ACK, then send an ACK and exit. we don't care if they respond or not.
-				fprintf(stderr, "Got the FIN-ACK. Sending an ACK and exiting.\n");
-				struct TCPHeader tcphdr_ack;
-				setFields((struct TCPHeader *)&tcphdr_ack, received_packet.getAckNumber(), received_packet.getSeqNumber() + 1, RECEIVEWINSIZE, true, false, false);
-				sendto(sockfd, (struct TCPHeader *)&tcphdr_ack, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
-				break;
+				//fprintf(stderr, "Got the FIN-ACK. Sending an ACK and exiting.\n");
+
+				unackedPackets.clear();
+
+				finalack_packet.setHeaderFields(received_packet.getAckNumber(), received_packet.getSeqNumber()+1, RECEIVEWINSIZE, true, false, false);
+
+				sendto(sockfd, (void *)&finalack_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&clientAddress, addressLength);
+
+
+
+				inTimeOutPeriod = true;
+				clock_gettime(CLOCK_MONOTONIC, &finalack_packet.m_time);
 			}
+
 		}
 
 	}

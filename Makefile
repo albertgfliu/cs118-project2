@@ -24,4 +24,4 @@ clean:
 	rm -rf *.o *~ *.gch *.swp *.dSYM server client *.tar.gz
 
 tarball: clean
-	tar -cvf $(USERID).tar.gz *
+	tar -cvf $(USERID).tar.gz Makefile server.* client.* TCPHeader.* Packet.* report.pdf README.md Vagrantfile

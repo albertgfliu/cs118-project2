@@ -23,8 +23,9 @@
 #define BUFSIZE 			1032
 #define MAXSEQNUM 			30720
 #define INITCONGWINSIZE 	1024
+#define SPECIALSSTHRESH		1024
 #define INITSSTHRESH		30720
-#define RECEIVEWINSIZE		30720
+#define RECEIVEWINSIZE		15360
 #define TIMEOUT				500000000
 
 int
@@ -46,7 +47,7 @@ main(int argc, char* argv[])
 	struct hostent *hp;
 	hp = gethostbyname(argv[1]);
 	if (!hp) {
-		std::cout << "Error: could not obtain address of host " + std::string(argv[1]) << std::endl;
+		std::cerr << "Error: could not obtain address of host " + std::string(argv[1]) << std::endl;
 		exit(EXIT_FAILURE);
 	}
 
@@ -76,7 +77,6 @@ main(int argc, char* argv[])
 	bool syn_acked = false;
 
 	Packet fin_packet;
-	bool got_final_ack = false;
 
 	while(1) {
 
@@ -100,10 +100,10 @@ main(int argc, char* argv[])
 			struct timespec now;
 			clock_gettime(CLOCK_MONOTONIC, &now);
 			if (syn_packet.hasExpired(now, TIMEOUT)) {
-				if (syn_tries > 2) {
-					fprintf(stderr, "Could not connect to server in 3 tries. Exiting.\n");
-					break;
-				}
+				// if (syn_tries > 2) {
+				// 	fprintf(stderr, "Could not connect to server in 3 tries. Exiting.\n");
+				// 	break;
+				// }
 				sendto(sockfd, (void *)&syn_packet.m_header, sizeof(struct TCPHeader), 0, (struct sockaddr *)&serverAddress, addressLength);
 				syn_packet.printSYNSend(true);
 				clock_gettime(CLOCK_MONOTONIC, &syn_packet.m_time);
@@ -191,7 +191,7 @@ main(int argc, char* argv[])
 				received_packet.printSeqReceive();
 				//fprintf(stderr, "Received FIN.\n");
 
-				currSeqNum++;
+				currAckNum++;
 				fin_packet.setHeaderFields(currSeqNum, currAckNum, RECEIVEWINSIZE, true, false, true);
 				clock_gettime(CLOCK_MONOTONIC, &fin_packet.m_time);
 
@@ -211,7 +211,7 @@ main(int argc, char* argv[])
 
 			/*if ACK from server, we are done*/
 			if (received_packet.isACK()) {
-				received_packet.printSeqReceive();
+				//received_packet.printSeqReceive();
 				//std::cerr << "Received ACK, terminating client." << std::endl;
 				break;
 			}
